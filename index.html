@@ -67,6 +67,24 @@
   footer{max-width:560px;margin:0 auto;padding:0 20px 34px;font-size:12.5px;color:var(--muted);text-align:center}
   footer .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:0}
   footer .dot.stale{background:var(--coral)}
+  .modal{position:fixed;inset:0;z-index:50;display:none;align-items:flex-end;justify-content:center;background:rgba(14,40,46,.55);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);padding:16px}
+  .modal.open{display:flex}
+  @media(min-width:600px){.modal{align-items:center}}
+  .sheet{background:#fff;width:100%;max-width:440px;border-radius:22px;padding:22px 20px calc(18px + env(safe-area-inset-bottom));box-shadow:0 20px 50px rgba(0,0,0,.25);animation:up .28s ease-out;max-height:88vh;overflow:auto}
+  @keyframes up{from{transform:translateY(30px);opacity:0}}
+  .sheet .bell{width:52px;height:52px;border-radius:16px;background:var(--sun);display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:12px;animation:ring 1.6s ease-in-out infinite}
+  @keyframes ring{0%,60%,100%{transform:rotate(0)}10%,30%{transform:rotate(-12deg)}20%,40%{transform:rotate(12deg)}}
+  .sheet h2{margin:0 0 4px;font-size:21px;color:var(--ink);text-transform:none;letter-spacing:0}
+  .sheet .sub{color:var(--muted);font-size:15px;margin-bottom:14px}
+  .nr{border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px}
+  .nr .lab{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--sea-2)}
+  .nr.cx .lab{color:#b4432c}
+  .nr .dates{font-size:17px;font-weight:700;margin:3px 0 2px}
+  .nr.cx .dates{text-decoration:line-through;color:var(--muted)}
+  .nr .info{font-size:14.5px;color:var(--muted)}
+  .nr .info b{color:var(--ink)}
+  .ack{display:block;width:100%;border:0;border-radius:14px;background:var(--sea);color:#fff;font:700 17px/1 inherit;padding:16px;margin-top:6px;cursor:pointer}
+  .ack:active{transform:scale(.98)}
   .skel{height:120px;border-radius:18px;background:linear-gradient(90deg,#fff 0,#f3efe8 50%,#fff 100%);background-size:200% 100%;animation:sk 1.2s infinite}
   @keyframes sk{to{background-position:-200% 0}}
 </style>
@@ -84,6 +102,7 @@
 
 <main id="app"><div class="skel"></div></main>
 <footer id="foot"></footer>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle"><div class="sheet" id="sheet"></div></div>
 
 <script>
 const TZ = "Europe/Paris", CHECKIN = "16h";
@@ -143,6 +162,62 @@ function calendar(stays, cl, today, monthOffset) {
   return html + "</div></div>";
 }
 
+// ── Nouvelles réservations : popup tant que Jérôme n'a pas confirmé ──
+const AGENT = "Jérôme", STORE = "menage-lgm-vus";
+const keyOf = s => s.arrivee + "|" + s.depart;
+let mem = null; // repli si le stockage du navigateur est indisponible
+function getSeen() {
+  try { const v = localStorage.getItem(STORE); return v === null ? null : JSON.parse(v); } catch { return mem; }
+}
+function setSeen(list) { mem = list; try { localStorage.setItem(STORE, JSON.stringify(list)); } catch {} }
+let pending = { nouv: [], annul: [], keys: [] };
+
+function checkNew(stays, today) {
+  const seen = getSeen() || [];
+  const cur = new Map(stays.map(s => [keyOf(s), s]));
+  const nouv = stays.filter(s => s.depart > today && !seen.includes(keyOf(s)));
+  const annul = seen.filter(k => !cur.has(k) && k.split("|")[1] > today)
+    .map(k => ({ arrivee: k.split("|")[0], depart: k.split("|")[1] }));
+  pending = { nouv, annul, today };
+  const n = nouv.length + annul.length;
+  document.title = (n ? `(${n}) ` : "") + "Planning ménage · Studio La Grande Motte";
+  if (!n) { closeModal(); return; }
+  showModal();
+}
+function showModal() {
+  const { nouv, annul, today } = pending, n = nouv.length + annul.length;
+  const title = annul.length && nouv.length ? "Planning modifié" : annul.length
+    ? (annul.length > 1 ? "Réservations annulées" : "Réservation annulée")
+    : (nouv.length > 1 ? `${nouv.length} nouvelles réservations` : "Nouvelle réservation");
+  let h = `<div class="bell">🔔</div><h2 id="mTitle">${title}</h2>
+    <div class="sub">${AGENT}, merci de confirmer que vous avez bien pris connaissance ${n > 1 ? "de ces changements" : "de ce changement"}.</div>`;
+  h += nouv.map(s => `<div class="nr"><div class="lab">${s.arrivee <= today ? "Séjour en cours" : "Nouvelle réservation"}</div>
+    <div class="dates">${fmt(s.arrivee, { weekday: "short", day: "numeric", month: "short" })} → ${fmt(s.depart, { weekday: "short", day: "numeric", month: "short" })}</div>
+    <div class="info">${plural(s.nuits, "nuit")} · ${s.arrivee > today ? `studio prêt le <b>${longDate(s.arrivee)}</b> à ${CHECKIN}<br>` : ""}ménage le <b>${longDate(s.depart)}</b></div></div>`).join("");
+  h += annul.map(s => `<div class="nr cx"><div class="lab">Annulée ou modifiée</div>
+    <div class="dates">${fmt(s.arrivee, { weekday: "short", day: "numeric", month: "short" })} → ${fmt(s.depart, { weekday: "short", day: "numeric", month: "short" })}</div>
+    <div class="info">Le ménage du ${longDate(s.depart)} n’est plus prévu pour ce séjour.</div></div>`).join("");
+  h += `<button class="ack" id="ackBtn">✓ Bien noté</button>`;
+  document.getElementById("sheet").innerHTML = h;
+  document.getElementById("modal").classList.add("open");
+  document.body.style.overflow = "hidden";
+  document.getElementById("ackBtn").onclick = acknowledge;
+}
+function closeModal() {
+  document.getElementById("modal").classList.remove("open");
+  document.body.style.overflow = "";
+}
+function acknowledge() {
+  const { nouv, annul } = pending;
+  const gone = new Set(annul.map(keyOf));
+  const seen = (getSeen() || []).filter(k => !gone.has(k));
+  nouv.forEach(s => { const k = keyOf(s); if (!seen.includes(k)) seen.push(k); });
+  setSeen(seen.slice(-200));
+  pending = { nouv: [], annul: [], keys: [] };
+  document.title = "Planning ménage · Studio La Grande Motte";
+  closeModal();
+}
+
 function render(data) {
   const today = todayIso(), stays = (data.sejours || []).slice().sort((a, b) => a.arrivee.localeCompare(b.arrivee));
   const cl = cleanings(stays, today), app = document.getElementById("app");
@@ -188,6 +263,7 @@ function render(data) {
   html += `<h2>Calendrier</h2>` + calendar(stays, cl, today, 0) + calendar(stays, cl, today, 1) +
     `<div class="legend"><span><i style="background:#d7ebef"></i>Occupé</span><span><i style="background:var(--coral)"></i>Ménage, arrivée le jour même</span><span><i style="background:var(--ok)"></i>Ménage, sans arrivée le jour même</span></div>`;
   app.innerHTML = html;
+  checkNew(stays, today);
 
   const ago = Date.now() - Date.parse(data.verifie), stale = ago > 8 * 3600e3;
   const when = new Date(data.verifie).toLocaleString("fr-FR", { timeZone: TZ, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
