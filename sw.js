@@ -1,6 +1,6 @@
 // Planning ménage : réseau d'abord, dernière version connue hors connexion
-const CACHE = "menage-lgm-v9";
-self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(["./", "index.html", "manifest.webmanifest", "icon-192.png", "apple-touch-icon.png"])).then(() => self.skipWaiting())); });
+const CACHE = "menage-lgm-v10";
+self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(["./", "index.html", "manifest.webmanifest", "icon-192.png", "apple-touch-icon.png", "favicon.png"])).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith("menage-") && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
