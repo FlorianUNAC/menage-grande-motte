@@ -28,7 +28,7 @@ jobs:
         run: |
           git config user.name "robot-menage"
           git config user.email "robot-menage@users.noreply.github.com"
-          git add data/menage.json 2>/dev/null || exit 0
+          git add data/menage.json menage.ics 2>/dev/null || exit 0
           git diff --cached --quiet && exit 0
           git commit -m "Planning ménage mis à jour"
           for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done

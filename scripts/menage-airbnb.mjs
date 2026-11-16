@@ -5,6 +5,7 @@ import fs from "node:fs";
 
 const URL_ICAL = process.env.AIRBNB_ICAL_URL;
 const OUT = "data/menage.json";
+const OUT_ICS = "menage.ics";
 const REFRESH_H = 6; // réécrit le fichier au moins toutes les 6 h (preuve que la synchro tourne)
 
 export function parseIcs(txt) {
@@ -34,6 +35,32 @@ export function buildStays(events, todayIso) {
     .sort((a, b) => a.arrivee.localeCompare(b.arrivee));
 }
 
+// Flux agenda (abonnement téléphone) : un événement « ménage » par départ de voyageurs
+const frDate = iso => new Date(iso + "T12:00:00Z").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+const icsDay = iso => iso.replace(/-/g, "");
+const nextDay = iso => new Date(Date.parse(iso + "T12:00:00Z") + 864e5).toISOString().slice(0, 10);
+const esc = t => t.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\;").replace(/\n/g, "\\n");
+export function menageEvent(s, stays, stamp, alarm) {
+  const next = stays.find(n => n.arrivee >= s.depart && n !== s);
+  const same = next && next.arrivee === s.depart;
+  const summary = same ? "🧹 Ménage studio LGM · arrivée 16h le jour même" : "🧹 Ménage studio La Grande Motte";
+  const desc = `Départ des voyageurs après ${s.nuits} nuit${s.nuits > 1 ? "s" : ""}.\n` +
+    (next ? (same ? "Nouveaux voyageurs le jour même : studio prêt pour 16h." : `Prochaine arrivée : ${frDate(next.arrivee)} à 16h.`) : "Aucune arrivée prévue après pour l'instant.") +
+    "\nPlanning : https://florianunac.github.io/menage-grande-motte/";
+  return ["BEGIN:VEVENT", `UID:menage-${icsDay(s.arrivee)}-${icsDay(s.depart)}@menage-grande-motte`, `DTSTAMP:${stamp}`,
+    `DTSTART;VALUE=DATE:${icsDay(s.depart)}`, `DTEND;VALUE=DATE:${icsDay(nextDay(s.depart))}`,
+    `SUMMARY:${esc(summary)}`, `DESCRIPTION:${esc(desc)}`, "TRANSP:TRANSPARENT",
+    ...(alarm ? ["BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:Ménage demain", "TRIGGER:-PT6H", "END:VALARM"] : []),
+    "END:VEVENT"];
+}
+export function buildIcs(stays) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//menage-grande-motte//FR", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "X-WR-CALNAME:Ménage studio La Grande Motte", "X-WR-TIMEZONE:Europe/Paris", "REFRESH-INTERVAL;VALUE=DURATION:PT1H", "X-PUBLISHED-TTL:PT1H",
+    ...stays.flatMap(s => menageEvent(s, stays, stamp, false)), "END:VCALENDAR"];
+  return lines.map(l => l.length > 74 ? l.match(/.{1,73}/gu).join("\r\n ") : l).join("\r\n") + "\r\n";
+}
+
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
   if (!URL_ICAL) { console.log("Secret AIRBNB_ICAL_URL pas encore renseigné : rien à faire."); process.exit(0); }
   const res = await fetch(URL_ICAL, { headers: { "User-Agent": "Mozilla/5.0 (robot menage)" } });
@@ -46,6 +73,7 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop()
   let old = null; try { old = JSON.parse(fs.readFileSync(OUT, "utf8")); } catch {}
   const same = old && JSON.stringify(old.sejours) === JSON.stringify(sejours);
   const fresh = old && Date.now() - Date.parse(old.verifie) < REFRESH_H * 3600e3;
+  if (!fs.existsSync(OUT_ICS) || !same) fs.writeFileSync(OUT_ICS, buildIcs(sejours));
   if (same && fresh) { console.log("Aucun changement."); process.exit(0); }
   const now = new Date().toISOString();
   fs.writeFileSync(OUT, JSON.stringify({ verifie: now, modifie: same ? old.modifie : now, sejours }, null, 1) + "\n");

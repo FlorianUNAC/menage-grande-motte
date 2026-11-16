@@ -1,0 +1,54 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//menage-grande-motte//FR
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Ménage studio La Grande Motte
+X-WR-TIMEZONE:Europe/Paris
+REFRESH-INTERVAL;VALUE=DURATION:PT1H
+X-PUBLISHED-TTL:PT1H
+BEGIN:VEVENT
+UID:menage-20261109-20261116@menage-grande-motte
+DTSTAMP:20261116T183927Z
+DTSTART;VALUE=DATE:20261116
+DTEND;VALUE=DATE:20261117
+SUMMARY:🧹 Ménage studio LGM · arrivée 16h le jour même
+DESCRIPTION:Départ des voyageurs après 7 nuits.\nNouveaux voyageurs le jo
+ ur même : studio prêt pour 16h.\nPlanning : https://florianunac.github.io
+ /menage-grande-motte/
+TRANSP:TRANSPARENT
+END:VEVENT
+BEGIN:VEVENT
+UID:menage-20261116-20261120@menage-grande-motte
+DTSTAMP:20261116T183927Z
+DTSTART;VALUE=DATE:20261120
+DTEND;VALUE=DATE:20261121
+SUMMARY:🧹 Ménage studio La Grande Motte
+DESCRIPTION:Départ des voyageurs après 4 nuits.\nProchaine arrivée : dima
+ nche 29 novembre à 16h.\nPlanning : https://florianunac.github.io/menage-
+ grande-motte/
+TRANSP:TRANSPARENT
+END:VEVENT
+BEGIN:VEVENT
+UID:menage-20261129-20261204@menage-grande-motte
+DTSTAMP:20261116T183927Z
+DTSTART;VALUE=DATE:20261204
+DTEND;VALUE=DATE:20261205
+SUMMARY:🧹 Ménage studio La Grande Motte
+DESCRIPTION:Départ des voyageurs après 5 nuits.\nProchaine arrivée : jeud
+ i 28 janvier à 16h.\nPlanning : https://florianunac.github.io/menage-gran
+ de-motte/
+TRANSP:TRANSPARENT
+END:VEVENT
+BEGIN:VEVENT
+UID:menage-20270128-20270130@menage-grande-motte
+DTSTAMP:20261116T183927Z
+DTSTART;VALUE=DATE:20270130
+DTEND;VALUE=DATE:20270131
+SUMMARY:🧹 Ménage studio La Grande Motte
+DESCRIPTION:Départ des voyageurs après 2 nuits.\nAucune arrivée prévue ap
+ rès pour l'instant.\nPlanning : https://florianunac.github.io/menage-gran
+ de-motte/
+TRANSP:TRANSPARENT
+END:VEVENT
+END:VCALENDAR

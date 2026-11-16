@@ -85,6 +85,20 @@
   .nr .info b{color:var(--ink)}
   .ack{display:block;width:100%;border:0;border-radius:14px;background:var(--sea);color:#fff;font:700 17px/1 inherit;padding:16px;margin-top:6px;cursor:pointer}
   .ack:active{transform:scale(.98)}
+  .later{display:block;width:100%;border:0;background:none;color:var(--muted);font:600 15px/1 inherit;padding:14px 0 4px;cursor:pointer}
+  .sheet{position:relative}
+  .acts{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom));background:#fff;margin:0 -20px;padding:8px 20px calc(4px + env(safe-area-inset-bottom));box-shadow:0 -10px 16px -10px rgba(0,0,0,.12)}
+  .xclose{position:absolute;top:12px;right:12px;width:36px;height:36px;border-radius:50%;border:0;background:#f1efe9;color:var(--muted);font-size:20px;line-height:1;cursor:pointer}
+  .agenda{margin-top:12px}
+  .agenda .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .btn{flex:1 1 140px;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;border:1.5px solid var(--sea);color:var(--sea);background:#fff;border-radius:12px;padding:11px 12px;font:650 14.5px/1.2 inherit;cursor:pointer}
+  .btn.fill{background:var(--sea);color:#fff}
+  .agenda .t1{font-weight:700}
+  .agenda .t2{font-size:14px;color:var(--muted);margin-top:3px}
+  .cal-add{flex:none;width:40px;height:40px;border-radius:12px;border:1.5px solid var(--line);background:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .nr .add{display:inline-flex;align-items:center;gap:6px;margin-top:10px;border:1.5px solid var(--sea);color:var(--sea);background:#fff;border-radius:10px;padding:8px 12px;font:650 14px/1 inherit;cursor:pointer}
+  .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;z-index:60;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.on{opacity:1}
   .skel{height:120px;border-radius:18px;background:linear-gradient(90deg,#fff 0,#f3efe8 50%,#fff 100%);background-size:200% 100%;animation:sk 1.2s infinite}
   @keyframes sk{to{background-position:-200% 0}}
 </style>
@@ -102,7 +116,8 @@
 
 <main id="app"><div class="skel"></div></main>
 <footer id="foot"></footer>
-<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+<div class="modal" id="modal" onclick="if(event.target===this)closeModal()" role="dialog" aria-modal="true" aria-labelledby="mTitle"><div class="sheet" id="sheet"></div></div>
 
 <script>
 const TZ = "Europe/Paris", CHECKIN = "16h";
@@ -189,19 +204,21 @@ function showModal() {
   const title = annul.length && nouv.length ? "Planning modifié" : annul.length
     ? (annul.length > 1 ? "Réservations annulées" : "Réservation annulée")
     : (nouv.length > 1 ? `${nouv.length} nouvelles réservations` : "Nouvelle réservation");
-  let h = `<div class="bell">🔔</div><h2 id="mTitle">${title}</h2>
+  let h = `<button class="xclose" id="xBtn" aria-label="Fermer sans confirmer">×</button><div class="bell">🔔</div><h2 id="mTitle">${title}</h2>
     <div class="sub">${AGENT}, merci de confirmer que vous avez bien pris connaissance ${n > 1 ? "de ces changements" : "de ce changement"}.</div>`;
   h += nouv.map(s => `<div class="nr"><div class="lab">${s.arrivee <= today ? "Séjour en cours" : "Nouvelle réservation"}</div>
     <div class="dates">${fmt(s.arrivee, { weekday: "short", day: "numeric", month: "short" })} → ${fmt(s.depart, { weekday: "short", day: "numeric", month: "short" })}</div>
-    <div class="info">${plural(s.nuits, "nuit")} · ${s.arrivee > today ? `studio prêt le <b>${longDate(s.arrivee)}</b> à ${CHECKIN}<br>` : ""}ménage le <b>${longDate(s.depart)}</b></div></div>`).join("");
+    <div class="info">${plural(s.nuits, "nuit")} · ${s.arrivee > today ? `studio prêt le <b>${longDate(s.arrivee)}</b> à ${CHECKIN}<br>` : ""}ménage le <b>${longDate(s.depart)}</b></div>
+    <button class="add" data-cal="${keyOf(s)}">📅 Ajouter à mon agenda</button></div>`).join("");
   h += annul.map(s => `<div class="nr cx"><div class="lab">Annulée ou modifiée</div>
     <div class="dates">${fmt(s.arrivee, { weekday: "short", day: "numeric", month: "short" })} → ${fmt(s.depart, { weekday: "short", day: "numeric", month: "short" })}</div>
     <div class="info">Le ménage du ${longDate(s.depart)} n’est plus prévu pour ce séjour.</div></div>`).join("");
-  h += `<button class="ack" id="ackBtn">✓ Bien noté</button>`;
+  h += `<div class="acts"><button class="ack" id="ackBtn">✓ Bien noté</button><button class="later" id="laterBtn">Plus tard</button></div>`;
   document.getElementById("sheet").innerHTML = h;
   document.getElementById("modal").classList.add("open");
   document.body.style.overflow = "hidden";
   document.getElementById("ackBtn").onclick = acknowledge;
+  document.getElementById("laterBtn").onclick = document.getElementById("xBtn").onclick = closeModal;
 }
 function closeModal() {
   document.getElementById("modal").classList.remove("open");
@@ -218,8 +235,51 @@ function acknowledge() {
   closeModal();
 }
 
+// ── Agenda du téléphone ──
+const SITE = "https://florianunac.github.io/menage-grande-motte/";
+const FEED = "florianunac.github.io/menage-grande-motte/menage.ics";
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let STAYS = [];
+function icsFor(s) {
+  const day = iso => iso.replace(/-/g, ""), nx = iso => new Date(Date.parse(iso + "T12:00:00Z") + 864e5).toISOString().slice(0, 10);
+  const e = t => t.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\;").replace(/\n/g, "\\n");
+  const next = STAYS.find(n => n.arrivee >= s.depart && n !== s), same = next && next.arrivee === s.depart;
+  const desc = `Départ des voyageurs après ${plural(s.nuits, "nuit")}.\n` +
+    (next ? (same ? `Nouveaux voyageurs le jour même : studio prêt pour ${CHECKIN}.` : `Prochaine arrivée : ${longDate(next.arrivee)} à ${CHECKIN}.`) : "Aucune arrivée prévue après pour l'instant.") + "\nPlanning : " + SITE;
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//menage-grande-motte//FR", "METHOD:PUBLISH", "BEGIN:VEVENT",
+    `UID:menage-${day(s.arrivee)}-${day(s.depart)}@menage-grande-motte`, `DTSTAMP:${stamp}`,
+    `DTSTART;VALUE=DATE:${day(s.depart)}`, `DTEND;VALUE=DATE:${day(nx(s.depart))}`,
+    `SUMMARY:${e(same ? "🧹 Ménage studio LGM · arrivée 16h le jour même" : "🧹 Ménage studio La Grande Motte")}`,
+    `DESCRIPTION:${e(desc)}`, "TRANSP:TRANSPARENT",
+    "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:Ménage demain au studio", "TRIGGER:-PT6H", "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+}
+function addToCalendar(key) {
+  const s = STAYS.find(x => keyOf(x) === key); if (!s) return;
+  const ics = icsFor(s), name = `menage-${s.depart}.ics`;
+  if (isIOS) { location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics); return; }
+  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast("Fichier agenda téléchargé : ouvrez-le pour l’ajouter");
+}
+function toast(t) { const el = document.getElementById("toast"); el.textContent = t; el.classList.add("on"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("on"), 3200); }
+document.addEventListener("click", ev => { const b = ev.target.closest("[data-cal]"); if (b) { ev.preventDefault(); addToCalendar(b.dataset.cal); } });
+function agendaBlock() {
+  const gcal = "https://calendar.google.com/calendar/render?cid=" + encodeURIComponent("webcal://" + FEED);
+  return `<h2>Mon agenda</h2><section class="card agenda">
+    <div class="t1">Recevoir tous les ménages dans l’agenda du téléphone</div>
+    <div class="t2">Abonnement automatique : les nouvelles réservations et les annulations s’y reportent toutes seules.</div>
+    <div class="btns">
+      <a class="btn fill" href="webcal://${FEED}">📱 iPhone</a>
+      <a class="btn" href="${gcal}" target="_blank" rel="noopener">🤖 Android</a>
+    </div></section>`;
+}
+
 function render(data) {
   const today = todayIso(), stays = (data.sejours || []).slice().sort((a, b) => a.arrivee.localeCompare(b.arrivee));
+  STAYS = stays;
   const cl = cleanings(stays, today), app = document.getElementById("app");
   const current = stays.find(s => s.arrivee <= today && s.depart > today);
   let html = "";
@@ -236,6 +296,8 @@ function render(data) {
       <div class="next">${c.next ? `Arrivée suivante : <b>${longDate(c.next.arrivee)}</b> à partir de ${CHECKIN} · ${plural(c.next.nuits, "nuit")}` : "Le studio reste libre après ce ménage."}</div>
     </section>`;
   }
+
+  html += agendaBlock();
 
   if (cl.length > 1) {
     html += `<h2>Ménages à venir</h2><div class="list">` + cl.slice(1).map(c => `
@@ -256,6 +318,7 @@ function render(data) {
         <div class="txt"><div class="t1">${fmt(s.arrivee, { day: "numeric", month: "short" })} → ${fmt(s.depart, { day: "numeric", month: "short" })}</div>
           <div class="t2">${plural(s.nuits, "nuit")} · arrivée ${CHECKIN}</div></div>
         ${now ? `<span class="tag now">En cours</span>` : ""}
+        <button class="cal-add" data-cal="${keyOf(s)}" aria-label="Ajouter ce ménage à mon agenda" title="Ajouter à mon agenda">📅</button>
       </div>`;
     }).join("") + `</div>`;
   }
