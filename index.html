@@ -359,9 +359,9 @@ function stockBlock(stays, today) {
 // ══ Onglet Stock (enregistré sur le téléphone de l'agent) ══
 const PRIX = { cafe: .5, mad: .5, comp: .5, jus: 1, coca: 1, chips: 1 };
 const PROD = [
-  { id: "cafe", e: "☕", n: "Capsules de café" }, { id: "mad", e: "🧁", n: "Madeleines" },
-  { id: "comp", e: "🍎", n: "Compotes" }, { id: "jus", e: "🧃", n: "Jus de fruits" },
-  { id: "coca", e: "🥤", n: "Coca petit format" }, { id: "chips", e: "🍟", n: "Chips" },
+  { id: "cafe", e: "☕", n: "Capsules de café", n1: "capsule de café" }, { id: "mad", e: "🧁", n: "Madeleines", n1: "madeleine" },
+  { id: "comp", e: "🍎", n: "Compotes", n1: "compote" }, { id: "jus", e: "🧃", n: "Jus de fruits", n1: "jus de fruits" },
+  { id: "coca", e: "🥤", n: "Coca petit format", n1: "Coca petit format" }, { id: "chips", e: "🍟", n: "Chips", n1: "chips" },
 ];
 const SKEY = "menage-lgm-stock";
 const zero = () => Object.fromEntries(PROD.map(p => [p.id, 0]));
@@ -464,7 +464,7 @@ function renderStock() {
     ? `<div class="sumline"><span>Total depuis le début</span><b class="big">${euro(tot)}</b></div><ul>` +
       ST.hist.slice(-8).reverse().map(x => `<li><span>Séjour parti le ${fmt(x.date, { day: "numeric", month: "short" })}</span><b>${euro(x.recette)}</b></li>`).join("") + `</ul>`
     : `<div class="note">Les ventes apparaîtront ici après le premier ménage validé.</div>`) +
-    `<div class="btns" style="display:flex;gap:8px;margin-top:12px"><button class="btn" onclick="partager('point')">↗ Envoyer le point à Florian</button></div></section>`;
+    `<div class="btns" style="display:flex;gap:8px;margin-top:12px"><button class="btn" onclick="envoiPopup(false)">↗ Envoyer le point à Florian</button></div></section>`;
 
   // 5. Réglages
   h += `<h2>Réglages</h2><section class="card"><details class="cfg"><summary>Quantité à laisser dans l’épicerie</summary>` +
@@ -478,17 +478,18 @@ function renderStock() {
 function validerMenage() {
   const m = nextMenage(); if (!m) return;
   const rest = ST.restant || { ...ST.epicerie }, pan = m.next ? kitFor(m.next.nuits) : {};
-  let recette = 0; const vend = zero();
+  let recette = 0; const vend = zero(), sortie = zero();
   PROD.forEach(p => {
     vend[p.id] = Math.max(0, ST.epicerie[p.id] - rest[p.id]); recette += vend[p.id] * PRIX[p.id];
     const reas = Math.max(0, ST.cible[p.id] - rest[p.id]);
+    sortie[p.id] = reas + (pan[p.id] || 0);
     ST.reserve[p.id] = Math.max(0, ST.reserve[p.id] - reas - (pan[p.id] || 0));
     ST.epicerie[p.id] = rest[p.id] + reas;
   });
   ST.faits[keyOf(m.stay)] = { date: m.date, panierPour: m.next ? keyOf(m.next) : null };
-  ST.hist.push({ date: m.date, recette, vend });
+  ST.hist.push({ date: m.date, recette, vend, sortie, panier: m.next ? m.next.nuits : 0 });
   ST.restant = null; saveSt(ST); renderStock(); scrollTo(0, 0);
-  toast(`Ménage validé · recette ${euro(recette)}`);
+  envoiPopup(true);
 }
 function coursesFaites() {
   const { ach } = besoins(); PROD.forEach(p => ST.reserve[p.id] += ach[p.id]);
@@ -506,6 +507,43 @@ async function partager(kind) {
   }
   try { if (navigator.share) { await navigator.share({ text: t }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
   try { await navigator.clipboard.writeText(t); toast("Texte copié, collez-le dans un message"); } catch { prompt("Copiez ce texte :", t); }
+}
+
+// ── Envoi du point à Florian (WhatsApp / e-mail) ──
+const FLO_WA = "33695596436", FLO_MAIL = "dsn.florian@gmail.com";
+function pointTexte() {
+  const { ach } = besoins(), last = ST.hist[ST.hist.length - 1], tot = ST.hist.reduce((a, x) => a + x.recette, 0);
+  const L = [`Point stock · studio La Grande Motte · ${fmt(PLAN.today, { weekday: "long", day: "numeric", month: "long" })}`, ""];
+  if (last) {
+    L.push(`Ménage du ${fmt(last.date, { day: "numeric", month: "long" })} : fait ✓`);
+    const v = PROD.filter(p => last.vend && last.vend[p.id]);
+    L.push(v.length ? "Vendu à l'épicerie : " + v.map(p => `${last.vend[p.id]} ${last.vend[p.id] === 1 ? p.n1 : p.n.toLowerCase()}`).join(", ") : "Rien vendu à l'épicerie");
+    L.push(`Recette : ${euro(last.recette)}`);
+    if (last.panier) L.push(`Panier d'accueil préparé (${plural(last.panier, "nuit")})`);
+    L.push("");
+  }
+  L.push(`Recette épicerie totale : ${euro(tot)}`, "", "Réserve :", ...PROD.map(p => `- ${p.n} : ${ST.reserve[p.id]}`), "");
+  const a = PROD.filter(p => ach[p.id]);
+  L.push(a.length ? "À acheter :" : "Rien à acheter pour les 30 prochains jours.", ...a.map(p => `- ${p.n} : ${ach[p.id]}`));
+  L.push("", "— Jérôme");
+  return L.join("\n");
+}
+function envoiPopup(apresMenage) {
+  const t = pointTexte(), last = ST.hist[ST.hist.length - 1];
+  const wa = `https://wa.me/${FLO_WA}?text=${encodeURIComponent(t)}`;
+  const mail = `mailto:${FLO_MAIL}?subject=${encodeURIComponent("Point stock La Grande Motte · " + fmt(PLAN.today, { day: "numeric", month: "long" }))}&body=${encodeURIComponent(t)}`;
+  document.getElementById("sheet").innerHTML = `<button class="xclose" onclick="closeModal()" aria-label="Fermer">×</button>
+    <div class="bell" style="animation:none;background:#e2f3ec">${apresMenage ? "✅" : "📨"}</div>
+    <h2 id="mTitle">${apresMenage ? "Ménage validé" : "Envoyer le point à Florian"}</h2>
+    <div class="sub">${apresMenage && last ? `Recette épicerie : <b style="color:var(--ok)">${euro(last.recette)}</b>. ` : ""}Envoyez le point à Florian en un appui.</div>
+    <pre style="white-space:pre-wrap;font-family:inherit;font-size:14px;line-height:1.45;background:var(--sand);border-radius:12px;padding:12px;margin:0 0 12px;max-height:38vh;overflow:auto">${esc(t)}</pre>
+    <div class="acts">
+      <a class="ack" style="background:#25d366;text-align:center;text-decoration:none" href="${wa}" target="_blank" rel="noopener" onclick="setTimeout(closeModal,400)">💬 Envoyer par WhatsApp</a>
+      <a class="ack" style="background:#fff;color:var(--sea);border:1.5px solid var(--sea);text-align:center;text-decoration:none" href="${mail}" onclick="setTimeout(closeModal,400)">✉️ Envoyer par e-mail</a>
+      <button class="later" onclick="closeModal()">Plus tard</button>
+    </div>`;
+  document.getElementById("modal").classList.add("open");
+  document.body.style.overflow = "hidden";
 }
 
 function render(data) {
