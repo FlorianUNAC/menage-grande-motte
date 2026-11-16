@@ -139,6 +139,13 @@
   .hist li{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:14.5px}
   .hist ul{list-style:none;margin:0;padding:0}
   details.cfg summary{cursor:pointer;font-weight:700;color:var(--sea);padding:4px 0}
+  .dem{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+  .dl{display:flex;gap:8px;align-items:flex-start;font-size:14.5px;font-weight:600;padding:8px 10px;border-radius:10px;background:#eef4ff;color:#2b4c8c}
+  .dl.tardif{background:#fdeee0;color:#9a4d12}
+  .dl.anticipee{background:#fde8e3;color:#b4432c}
+  .dl i{font-style:normal}
+  .row .dem{margin-top:6px}.row .dl{font-size:13px;padding:5px 8px}
+  .c.dmk::after{content:"";position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:#2b4c8c}
   .skel{height:120px;border-radius:18px;background:linear-gradient(90deg,#fff 0,#f3efe8 50%,#fff 100%);background-size:200% 100%;animation:sk 1.2s infinite}
   @keyframes sk{to{background-position:-200% 0}}
 </style>
@@ -194,7 +201,7 @@ function cleanings(stays, today) {
 }
 function gapPill(c) {
   if (!c.next) return `<span class="pill none">Pas d’arrivée prévue pour l’instant</span>`;
-  if (c.gap === 0) return `<span class="pill rush">⏱ Enchaînement le jour même · prêt pour ${CHECKIN}</span>`;
+  if (c.gap === 0) return `<span class="pill rush">⏱ Enchaînement le jour même · prêt pour ${arrHeure(c.next)}</span>`;
   return `<span class="pill calm">✓ ${plural(c.gap, "jour")} avant la prochaine arrivée</span>`;
 }
 function gapTag(c) {
@@ -202,6 +209,59 @@ function gapTag(c) {
   if (c.gap === 0) return `<span class="tag rush">Même jour</span>`;
   return `<span class="tag calm">+${c.gap} j</span>`;
 }
+
+
+// ── Demandes voyageurs (Google Sheet de Florian) ──
+const SHEET_CSV = "https://docs.google.com/spreadsheets/d/1yAR3ifZcAqqP0BBP0jMvT9ny2COKeOmRHIxKUhGb9eE/gviz/tq?tqx=out:csv&sheet=Demandes";
+let DEM = [];
+const DEM_INFO = {
+  tardif: { e: "🕐", lab: "Départ tardif" },
+  anticipee: { e: "⏩", lab: "Arrivée anticipée" },
+  bagages: { e: "🧳", lab: "Dépose bagages" },
+};
+function parseCsv(txt) {
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < txt.length; i++) {
+    const c = txt[i];
+    if (q) { if (c === '"') { if (txt[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true; else if (c === ",") { row.push(f); f = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && txt[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += c;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+function normDem(rows) {
+  const out = [];
+  rows.slice(1).forEach(r => {
+    let [dt, ty, hr, note] = r.map(x => (x || "").trim());
+    let m = dt.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/), iso = null;
+    if (m) iso = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    else if ((m = dt.match(/^(\d{4})-(\d{2})-(\d{2})/))) iso = m[0];
+    const t = /tard/i.test(ty) ? "tardif" : /anticip/i.test(ty) ? "anticipee" : /bagage/i.test(ty) ? "bagages" : null;
+    if (!iso || !t) return;
+    const hm = hr.match(/(\d{1,2})\s*[h:]\s*(\d{2})?/i);
+    const heure = hm ? `${+hm[1]}h${hm[2] && hm[2] !== "00" ? hm[2] : ""}` : "";
+    out.push({ date: iso, type: t, heure, note: note || "" });
+  });
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+const demOn = (date, type) => DEM.find(x => x.date === date && x.type === type);
+const arrHeure = s => { const a = s && demOn(s.arrivee, "anticipee"); return a && a.heure ? a.heure : CHECKIN; };
+const demKey = x => `d|${x.date}|${x.type}|${x.heure}`;
+function demText(x, short) {
+  const h = x.heure;
+  const t = x.type === "tardif" ? (h ? `Départ tardif : voyageurs présents jusqu’à ${h}` : "Départ tardif accordé")
+    : x.type === "anticipee" ? (h ? `Arrivée anticipée : studio prêt pour ${h}` : "Arrivée anticipée")
+    : (h ? `Dépose bagages à ${h}` : "Dépose bagages");
+  return short ? t : t + (x.note ? ` · ${x.note}` : "");
+}
+function demLines(list) {
+  const l = list.filter(Boolean);
+  return l.length ? `<div class="dem">${l.map(x => `<div class="dl ${x.type}"><i>${DEM_INFO[x.type].e}</i><span>${esc(demText(x))}</span></div>`).join("")}</div>` : "";
+}
+const demForMenage = c => [demOn(c.date, "tardif"), c.next && demOn(c.next.arrivee, "anticipee"), c.next && demOn(c.next.arrivee, "bagages")];
+const demForStay = s => [demOn(s.arrivee, "anticipee"), demOn(s.arrivee, "bagages"), demOn(s.depart, "tardif")];
 
 function calendar(stays, cl, today, monthOffset) {
   const t = d(today), first = new Date(t.getFullYear(), t.getMonth() + monthOffset, 1, 12);
@@ -218,6 +278,7 @@ function calendar(stays, cl, today, monthOffset) {
     if (k < today) cls.push("past");
     else if (c) { cls.push("clean"); if (c.gap !== 0) cls.push("calmc"); }
     else if (stays.some(s => k >= s.arrivee && k < s.depart)) cls.push("occ");
+    if (k >= today && DEM.some(x => x.date === k)) cls.push("dmk");
     if (k === today) cls.push("today");
     html += `<div class="${cls.join(" ")}">${day}</div>`;
   }
@@ -238,29 +299,39 @@ function checkNew(stays, today) {
   const seen = getSeen() || [];
   const cur = new Map(stays.map(s => [keyOf(s), s]));
   const nouv = stays.filter(s => s.depart > today && !seen.includes(keyOf(s)));
-  const annul = seen.filter(k => !cur.has(k) && k.split("|")[1] > today)
+  const annul = seen.filter(k => !k.startsWith("d|") && !cur.has(k) && k.split("|")[1] > today)
     .map(k => ({ arrivee: k.split("|")[0], depart: k.split("|")[1] }));
-  pending = { nouv, annul, today };
-  const n = nouv.length + annul.length;
+  const dcur = new Set(DEM.map(demKey));
+  const dnouv = DEM.filter(x => x.date >= today && !seen.includes(demKey(x)));
+  const dannul = seen.filter(k => k.startsWith("d|") && !dcur.has(k) && k.split("|")[1] >= today)
+    .map(k => { const [, date, type, heure] = k.split("|"); return { date, type, heure, note: "" }; });
+  pending = { nouv, annul, dnouv, dannul, today };
+  const n = nouv.length + annul.length + dnouv.length + dannul.length;
   document.title = (n ? `(${n}) ` : "") + "Planning ménage · Studio La Grande Motte";
   if (!n) { closeModal(); return; }
   showModal();
 }
 function showModal() {
-  const { nouv, annul, today } = pending, n = nouv.length + annul.length;
-  const title = annul.length && nouv.length ? "Planning modifié" : annul.length
+  const { nouv, annul, dnouv = [], dannul = [], today } = pending, n = nouv.length + annul.length + dnouv.length + dannul.length;
+  const title = (dnouv.length || dannul.length) && !nouv.length && !annul.length ? (dnouv.length + dannul.length > 1 ? "Demandes voyageurs" : (dannul.length ? "Demande annulée" : "Nouvelle demande voyageur")) : (dnouv.length || dannul.length) ? "Planning modifié" : annul.length && nouv.length ? "Planning modifié" : annul.length
     ? (annul.length > 1 ? "Réservations annulées" : "Réservation annulée")
     : (nouv.length > 1 ? `${nouv.length} nouvelles réservations` : "Nouvelle réservation");
   let h = `<button class="xclose" id="xBtn" aria-label="Fermer sans confirmer">×</button><div class="bell">🔔</div><h2 id="mTitle">${title}</h2>
     <div class="sub">${AGENT}, merci de confirmer que vous avez bien pris connaissance ${n > 1 ? "de ces changements" : "de ce changement"}.</div>`;
   h += nouv.map(s => `<div class="nr"><div class="lab">${s.arrivee <= today ? "Séjour en cours" : "Nouvelle réservation"}</div>
     <div class="dates">${fmt(s.arrivee, { weekday: "short", day: "numeric", month: "short" })} → ${fmt(s.depart, { weekday: "short", day: "numeric", month: "short" })}</div>
-    <div class="info">${plural(s.nuits, "nuit")} · ${s.arrivee > today ? `studio prêt le <b>${longDate(s.arrivee)}</b> à ${CHECKIN}<br>` : ""}ménage le <b>${longDate(s.depart)}</b></div>
+    <div class="info">${plural(s.nuits, "nuit")} · ${s.arrivee > today ? `studio prêt le <b>${longDate(s.arrivee)}</b> à ${arrHeure(s)}<br>` : ""}ménage le <b>${longDate(s.depart)}</b></div>
     ${s.arrivee > today ? kitBlock(s, "Panier d’accueil") : ""}
     <button class="add" data-cal="${keyOf(s)}">📅 Ajouter à mon agenda</button></div>`).join("");
   h += annul.map(s => `<div class="nr cx"><div class="lab">Annulée ou modifiée</div>
     <div class="dates">${fmt(s.arrivee, { weekday: "short", day: "numeric", month: "short" })} → ${fmt(s.depart, { weekday: "short", day: "numeric", month: "short" })}</div>
     <div class="info">Le ménage du ${longDate(s.depart)} n’est plus prévu pour ce séjour.</div></div>`).join("");
+  h += dnouv.map(x => `<div class="nr"><div class="lab">${DEM_INFO[x.type].e} ${DEM_INFO[x.type].lab}</div>
+    <div class="dates" style="text-transform:capitalize">${longDate(x.date)}${x.heure ? ` · ${x.heure}` : ""}</div>
+    <div class="info">${esc(demText(x))}</div></div>`).join("");
+  h += dannul.map(x => `<div class="nr cx"><div class="lab">${DEM_INFO[x.type].lab} annulé${x.type === "anticipee" ? "e" : x.type === "bagages" ? "e" : ""}</div>
+    <div class="dates" style="text-transform:capitalize">${longDate(x.date)}${x.heure ? ` · ${x.heure}` : ""}</div>
+    <div class="info">Horaires habituels ce jour-là.</div></div>`).join("");
   h += `<div class="acts"><button class="ack" id="ackBtn">✓ Bien noté</button><button class="later" id="laterBtn">Plus tard</button></div>`;
   document.getElementById("sheet").innerHTML = h;
   document.getElementById("modal").classList.add("open");
@@ -273,10 +344,11 @@ function closeModal() {
   document.body.style.overflow = "";
 }
 function acknowledge() {
-  const { nouv, annul } = pending;
-  const gone = new Set(annul.map(keyOf));
+  const { nouv, annul, dnouv = [], dannul = [] } = pending;
+  const gone = new Set([...annul.map(keyOf), ...dannul.map(demKey)]);
   const seen = (getSeen() || []).filter(k => !gone.has(k));
   nouv.forEach(s => { const k = keyOf(s); if (!seen.includes(k)) seen.push(k); });
+  dnouv.forEach(x => { const k = demKey(x); if (!seen.includes(k)) seen.push(k); });
   setSeen(seen.slice(-200));
   pending = { nouv: [], annul: [], keys: [] };
   document.title = "Planning ménage · Studio La Grande Motte";
@@ -293,7 +365,7 @@ function icsFor(s) {
   const e = t => t.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\;").replace(/\n/g, "\\n");
   const next = STAYS.find(n => n.arrivee >= s.depart && n !== s), same = next && next.arrivee === s.depart;
   const desc = `Départ des voyageurs après ${plural(s.nuits, "nuit")}.\n` +
-    (next ? (same ? `Nouveaux voyageurs le jour même : studio prêt pour ${CHECKIN}.` : `Prochaine arrivée : ${longDate(next.arrivee)} à ${CHECKIN}.`) + `\nPanier d’accueil (${plural(next.nuits, "nuit")}) : ${kitText(next.nuits)}.` : "Aucune arrivée prévue après pour l'instant.") + "\nPlanning : " + SITE;
+    (next ? (same ? `Nouveaux voyageurs le jour même : studio prêt pour ${arrHeure(next)}.` : `Prochaine arrivée : ${longDate(next.arrivee)} à ${arrHeure(next)}.`) + `\nPanier d’accueil (${plural(next.nuits, "nuit")}) : ${kitText(next.nuits)}.` : "Aucune arrivée prévue après pour l'instant.") + [demOn(s.depart, "tardif"), next && demOn(next.arrivee, "anticipee"), next && demOn(next.arrivee, "bagages")].filter(Boolean).map(x => "\n" + demText(x)).join("") + "\nPlanning : " + SITE;
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
   return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//menage-grande-motte//FR", "METHOD:PUBLISH", "BEGIN:VEVENT",
     `UID:menage-${day(s.arrivee)}-${day(s.depart)}@menage-grande-motte`, `DTSTAMP:${stamp}`,
@@ -622,7 +694,8 @@ function render(data) {
       <div class="when"><span class="rel">${rel(c.date, today)}</span><span class="date">${longDate(c.date)}</span></div>
       <div>Départ des voyageurs après ${plural(c.stay.nuits, "nuit")}${current && current === c.stay ? " · <b>séjour en cours</b>" : ""}</div>
       ${gapPill(c)}
-      <div class="next">${c.next ? `Arrivée suivante : <b>${longDate(c.next.arrivee)}</b> à partir de ${CHECKIN} · ${plural(c.next.nuits, "nuit")}` : "Le studio reste libre après ce ménage."}</div>
+      ${demLines(demForMenage(c))}
+      <div class="next">${c.next ? `Arrivée suivante : <b>${longDate(c.next.arrivee)}</b> à partir de ${arrHeure(c.next)} · ${plural(c.next.nuits, "nuit")}` : "Le studio reste libre après ce ménage."}</div>
       ${c.next ? kitBlock(c.next, "Panier d’accueil à préparer") : ""}
     </section>`;
   }
@@ -634,7 +707,7 @@ function render(data) {
       <div class="row ${c.gap === 0 ? "rush" : ""}">
         <div class="day"><div class="dw">${fmt(c.date, { weekday: "short" }).replace(".", "")}</div><div class="dn">${fmt(c.date, { day: "numeric" })}</div><div class="dm">${fmt(c.date, { month: "short" }).replace(".", "")}</div></div>
         <div class="txt"><div class="t1">Ménage · ${rel(c.date, today).toLowerCase()}</div>
-          <div class="t2">${c.next ? (c.gap === 0 ? `Nouveaux voyageurs le jour même à ${CHECKIN}` : `Prochaine arrivée ${fmt(c.next.arrivee, { weekday: "long", day: "numeric", month: "long" })}`) : "Pas d’arrivée prévue après"}</div>${c.next ? `<div class="kitmini">🎁 Panier ${kitTier(c.next.nuits)} : ${kitText(c.next.nuits)}</div>` : ""}</div>
+          <div class="t2">${c.next ? (c.gap === 0 ? `Nouveaux voyageurs le jour même à ${arrHeure(c.next)}` : `Prochaine arrivée ${fmt(c.next.arrivee, { weekday: "long", day: "numeric", month: "long" })}`) : "Pas d’arrivée prévue après"}</div>${c.next ? `<div class="kitmini">🎁 Panier ${kitTier(c.next.nuits)} : ${kitText(c.next.nuits)}</div>` : ""}${demLines(demForMenage(c))}</div>
         ${gapTag(c)}
       </div>`).join("") + `</div>`;
   }
@@ -645,9 +718,8 @@ function render(data) {
       const now = s.arrivee <= today;
       return `<div class="row">
         <div class="day"><div class="dw">${fmt(s.arrivee, { weekday: "short" }).replace(".", "")}</div><div class="dn">${fmt(s.arrivee, { day: "numeric" })}</div><div class="dm">${fmt(s.arrivee, { month: "short" }).replace(".", "")}</div></div>
-        <div class="txt"><div class="t1">${fmt(s.arrivee, { day: "numeric", month: "short" })} → ${fmt(s.depart, { day: "numeric", month: "short" })}</div>
-          <div class="t2">${plural(s.nuits, "nuit")} · arrivée ${CHECKIN}</div><div class="kitmini">🎁 ${kitText(s.nuits)}</div></div>
-        ${now ? `<span class="tag now">En cours</span>` : ""}
+        <div class="txt"><div class="t1">${fmt(s.arrivee, { day: "numeric", month: "short" })} → ${fmt(s.depart, { day: "numeric", month: "short" })}${now ? ` <span class="tag now">En cours</span>` : ""}</div>
+          <div class="t2">${plural(s.nuits, "nuit")} · arrivée ${arrHeure(s)}</div><div class="kitmini">🎁 ${kitText(s.nuits)}</div>${demLines(demForStay(s))}</div>
         <button class="cal-add" data-cal="${keyOf(s)}" aria-label="Ajouter ce ménage à mon agenda" title="Ajouter à mon agenda">📅</button>
       </div>`;
     }).join("") + `</div>`;
@@ -655,7 +727,7 @@ function render(data) {
 
   html += stockBlock(stays, today);
   html += `<h2>Calendrier</h2>` + calendar(stays, cl, today, 0) + calendar(stays, cl, today, 1) +
-    `<div class="legend"><span><i style="background:#d7ebef"></i>Occupé</span><span><i style="background:var(--coral)"></i>Ménage, arrivée le jour même</span><span><i style="background:var(--ok)"></i>Ménage, sans arrivée le jour même</span></div>`;
+    `<div class="legend"><span><i style="background:#d7ebef"></i>Occupé</span><span><i style="background:var(--coral)"></i>Ménage, arrivée le jour même</span><span><i style="background:var(--ok)"></i>Ménage, sans arrivée le jour même</span><span><i style="background:#2b4c8c;border-radius:50%;width:8px;height:8px"></i>Demande voyageur</span></div>`;
   app.innerHTML = html;
   PLAN = { stays, today };
   renderStock(); renderLinge();
@@ -669,9 +741,14 @@ function render(data) {
 
 async function load() {
   try {
-    const r = await fetch(DATA_URL + "?t=" + Date.now(), { cache: "no-store" });
+    const [r, csv] = await Promise.all([
+      fetch(DATA_URL + "?t=" + Date.now(), { cache: "no-store" }),
+      fetch(SHEET_CSV + "&t=" + Date.now(), { cache: "no-store" }).then(x => x.ok ? x.text() : null).catch(() => null),
+    ]);
     if (!r.ok) throw new Error(r.status);
-    render(await r.json());
+    const data = await r.json();
+    DEM = csv && csv.startsWith('"Date"') ? normDem(parseCsv(csv)) : (data.demandes || DEM);
+    render(data);
   } catch (e) {
     if (!document.querySelector(".hero"))
       document.getElementById("app").innerHTML = `<section class="card"><div class="empty">Planning en cours de préparation.<br>Réessayez dans quelques minutes.</div></section>`;
