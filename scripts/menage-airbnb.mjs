@@ -102,7 +102,13 @@ export function buildIcs(stays) {
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//menage-grande-motte//FR", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
     "X-WR-CALNAME:Ménage studio La Grande Motte", "X-WR-TIMEZONE:Europe/Paris", "REFRESH-INTERVAL;VALUE=DURATION:PT1H", "X-PUBLISHED-TTL:PT1H",
     ...stays.flatMap(s => menageEvent(s, stays, stamp, false)), "END:VCALENDAR"];
-  return lines.map(l => l.length > 74 ? l.match(/.{1,73}/gu).join("\r\n ") : l).join("\r\n") + "\r\n";
+  return lines.map(fold).join("\r\n") + "\r\n";
+}
+// Pliage RFC 5545 : 75 octets max par ligne, sans couper un caractère
+function fold(l) {
+  const out = []; let cur = "", n = 0, lim = 75;
+  for (const ch of l) { const b = Buffer.byteLength(ch); if (n + b > lim) { out.push(cur); cur = ""; n = 0; lim = 74; } cur += ch; n += b; }
+  out.push(cur); return out.join("\r\n ");
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
