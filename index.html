@@ -146,6 +146,29 @@
   .dl i{font-style:normal}
   .row .dem{margin-top:6px}.row .dl{font-size:13px;padding:5px 8px}
   .c.dmk::after{content:"";position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:#2b4c8c}
+  .tl{display:flex;align-items:flex-start;margin:16px 0 4px}
+  .tl .st{flex:1;text-align:center;min-width:0}
+  .tl .ic{width:46px;height:46px;margin:0 auto 6px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:21px;background:var(--sand)}
+  .tl .st.mid .ic{background:var(--sea);box-shadow:0 0 0 5px #d7ebef}
+  .tl .st.hot .ic{background:#fde8e3}
+  .tl .sl{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .tl .sv{font-size:14.5px;font-weight:700;margin-top:2px}
+  .tl .ln{flex:0 0 18px;height:2px;background:var(--line);margin-top:23px;border-radius:2px}
+  .week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .wd{border-radius:14px;padding:8px 2px 9px;text-align:center;background:var(--card);box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .wd .a{font-size:11px;font-weight:800;text-transform:uppercase;color:var(--muted)}
+  .wd .b{font-size:19px;font-weight:800;line-height:1.2}
+  .wd .e{font-size:16px;height:20px;margin-top:2px}
+  .wd.occ{background:#d7ebef}.wd.occ .b{color:var(--sea)}
+  .wd.cl{background:var(--ok);color:#fff}.wd.cl .a{color:#e2f3ec}
+  .wd.cl.rush{background:var(--coral)}.wd.cl.rush .a{color:#fde8e3}
+  .wd.tod{outline:2px solid var(--ink);outline-offset:-2px}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .tile{background:var(--card);border:0;border-radius:16px;padding:14px 10px;text-align:left;box-shadow:0 1px 2px rgba(0,0,0,.04),0 6px 16px rgba(14,79,92,.06);cursor:pointer;font:inherit;color:inherit}
+  .tile .ti{font-size:22px}
+  .tile .tn{font-weight:750;font-size:15px;margin-top:6px}
+  .tile .tv{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.3}
+  .tile .tv b{color:#b4432c}.tile .tv b.ok{color:var(--ok)}
   .skel{height:120px;border-radius:18px;background:linear-gradient(90deg,#fff 0,#f3efe8 50%,#fff 100%);background-size:200% 100%;animation:sk 1.2s infinite}
   @keyframes sk{to{background-position:-200% 0}}
 </style>
@@ -155,8 +178,8 @@
   <div class="brand">
     <svg width="40" height="40" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#13697a"/><path d="M14 42 L32 16 L50 42 Z" fill="#f4c95d"/><path d="M10 48 q6 -5 12 0 t12 0 t12 0 t12 0" stroke="#fff" stroke-width="3" fill="none"/></svg>
     <div>
-      <h1>Planning ménage</h1>
-      <p>Studio Les Incas · La Grande Motte</p>
+      <h1 id="hello">Planning ménage</h1>
+      <p id="hsub">Studio Les Incas · La Grande Motte</p>
     </div>
   </div>
 </header>
@@ -388,7 +411,7 @@ function toast(t) { const el = document.getElementById("toast"); el.textContent 
 document.addEventListener("click", ev => { const b = ev.target.closest("[data-cal]"); if (b) { ev.preventDefault(); addToCalendar(b.dataset.cal); } });
 function agendaBlock() {
   const gcal = "https://calendar.google.com/calendar/render?cid=" + encodeURIComponent("webcal://" + FEED);
-  return `<h2>Mon agenda</h2><section class="card agenda">
+  return `<h2 id="agendaSec">Mon agenda</h2><section class="card agenda">
     <div class="t1">Recevoir tous les ménages dans l’agenda du téléphone</div>
     <div class="t2">Abonnement automatique : les nouvelles réservations et les annulations s’y reportent toutes seules.</div>
     <div class="btns">
@@ -677,6 +700,43 @@ function retourLaverie() {
   LINGE.forEach(x => { ST.linge.propre[x.id] += ST.linge.lavage[x.id]; ST.linge.lavage[x.id] = 0; });
   saveSt(ST); renderLinge(); renderStock(); toast("Linge rangé dans la réserve propre");
 }
+// ── Accueil ──
+function greet() {
+  const h = parseInt(new Date().toLocaleString("en-GB", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" }), 10);
+  document.getElementById("hello").textContent = `${h < 5 || h >= 18 ? "Bonsoir" : "Bonjour"} ${AGENT} 👋`;
+  const t = todayIso();
+  document.getElementById("hsub").textContent = fmt(t, { weekday: "long", day: "numeric", month: "long" }).replace(/^./, c => c.toUpperCase()) + " · Studio Les Incas";
+}
+function timeline(c) {
+  const tard = demOn(c.date, "tardif"), same = c.next && c.gap === 0;
+  const arr = c.next ? (same ? arrHeure(c.next) : fmt(c.next.arrivee, { weekday: "short", day: "numeric" }).replace(".", "")) : "Libre";
+  return `<div class="tl">
+    <div class="st ${tard ? "hot" : ""}"><div class="ic">🚪</div><div class="sl">Départ</div><div class="sv">${tard && tard.heure ? "jusqu’à " + tard.heure : "voyageurs"}</div></div>
+    <div class="ln"></div>
+    <div class="st mid"><div class="ic">🧹</div><div class="sl">Ménage</div><div class="sv">${same ? `avant ${arrHeure(c.next)}` : "dans la journée"}</div></div>
+    <div class="ln"></div>
+    <div class="st ${same ? "hot" : ""}"><div class="ic">🔑</div><div class="sl">Arrivée</div><div class="sv">${arr}</div></div>
+  </div>`;
+}
+function weekStrip(stays, cl, today) {
+  const cm = new Map(cl.map(c => [c.date, c])); let h = `<div class="week">`;
+  for (let i = 0; i < 7; i++) {
+    const k = new Date(Date.parse(today + "T12:00:00Z") + i * 864e5).toISOString().slice(0, 10), c = cm.get(k);
+    const occ = stays.some(s => k >= s.arrivee && k < s.depart), dm = DEM.some(x => x.date === k);
+    const cls = ["wd", c ? "cl" : occ ? "occ" : "", c && c.gap === 0 ? "rush" : "", i === 0 ? "tod" : ""].join(" ");
+    h += `<div class="${cls}"><div class="a">${i === 0 ? "Auj." : fmt(k, { weekday: "short" }).replace(".", "")}</div><div class="b">${+k.slice(8)}</div><div class="e">${c ? "🧹" : dm ? "🧳" : occ ? "🛏️" : ""}</div></div>`;
+  }
+  return h + `</div>`;
+}
+function tilesBlock() {
+  let nAch = 0, jeux = 0;
+  try { nAch = PROD.filter(p => besoins().ach[p.id] > 0).length; jeux = lingeJeux(); } catch {}
+  return `<div class="tiles">
+    <button class="tile" onclick="showTab('stock')"><div class="ti">📦</div><div class="tn">Stock</div><div class="tv">${nAch ? `<b>${nAch} produit${nAch > 1 ? "s" : ""}</b> à acheter` : `<b class="ok">Réserve OK</b>`}</div></button>
+    <button class="tile" onclick="showTab('linge')"><div class="ti">🛏️</div><div class="tn">Linge</div><div class="tv">${jeux >= 2 ? `<b class="ok">${jeux} jeux</b> propres` : `<b>${jeux >= 99 ? 0 : jeux} jeu${jeux > 1 ? "x" : ""}</b> propre${jeux > 1 ? "s" : ""}`}</div></button>
+    <button class="tile" onclick="document.getElementById('agendaSec').scrollIntoView({behavior:'smooth'})"><div class="ti">📅</div><div class="tn">Agenda</div><div class="tv">Tout dans mon téléphone</div></button>
+  </div>`;
+}
 
 function render(data) {
   const today = todayIso(), stays = (data.sejours || []).slice().sort((a, b) => a.arrivee.localeCompare(b.arrivee));
@@ -692,15 +752,16 @@ function render(data) {
     html += `<section class="card hero">
       <div class="kicker">Prochain ménage</div>
       <div class="when"><span class="rel">${rel(c.date, today)}</span><span class="date">${longDate(c.date)}</span></div>
-      <div>Départ des voyageurs après ${plural(c.stay.nuits, "nuit")}${current && current === c.stay ? " · <b>séjour en cours</b>" : ""}</div>
+      ${timeline(c)}
+      <div class="note" style="text-align:center">Séjour de ${plural(c.stay.nuits, "nuit")}${c.next ? ` · prochains voyageurs pour ${plural(c.next.nuits, "nuit")}` : ""}</div>
       ${gapPill(c)}
       ${demLines(demForMenage(c))}
-      <div class="next">${c.next ? `Arrivée suivante : <b>${longDate(c.next.arrivee)}</b> à partir de ${arrHeure(c.next)} · ${plural(c.next.nuits, "nuit")}` : "Le studio reste libre après ce ménage."}</div>
       ${c.next ? kitBlock(c.next, "Panier d’accueil à préparer") : ""}
     </section>`;
   }
 
-  html += agendaBlock();
+  html += `<h2>Ma semaine</h2>` + weekStrip(stays, cl, today);
+  html += `<h2>Raccourcis</h2>` + tilesBlock();
 
   if (cl.length > 1) {
     html += `<h2>Ménages à venir</h2><div class="list">` + cl.slice(1).map(c => `
@@ -725,10 +786,10 @@ function render(data) {
     }).join("") + `</div>`;
   }
 
-  html += stockBlock(stays, today);
   html += `<h2>Calendrier</h2>` + calendar(stays, cl, today, 0) + calendar(stays, cl, today, 1) +
-    `<div class="legend"><span><i style="background:#d7ebef"></i>Occupé</span><span><i style="background:var(--coral)"></i>Ménage, arrivée le jour même</span><span><i style="background:var(--ok)"></i>Ménage, sans arrivée le jour même</span><span><i style="background:#2b4c8c;border-radius:50%;width:8px;height:8px"></i>Demande voyageur</span></div>`;
+    `<div class="legend"><span><i style="background:#d7ebef"></i>Occupé</span><span><i style="background:var(--coral)"></i>Ménage, arrivée le jour même</span><span><i style="background:var(--ok)"></i>Ménage, sans arrivée le jour même</span><span><i style="background:#2b4c8c;border-radius:50%;width:8px;height:8px"></i>Demande voyageur</span></div>` + agendaBlock();
   app.innerHTML = html;
+  greet();
   PLAN = { stays, today };
   renderStock(); renderLinge();
   checkNew(stays, today);
