@@ -99,6 +99,17 @@
   .nr .add{display:inline-flex;align-items:center;gap:6px;margin-top:10px;border:1.5px solid var(--sea);color:var(--sea);background:#fff;border-radius:10px;padding:8px 12px;font:650 14px/1 inherit;cursor:pointer}
   .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;z-index:60;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.on{opacity:1}
+  .kit{margin-top:14px;padding:14px;border-radius:14px;background:#fff8e8;border:1.5px solid #f6e3b4}
+  .kit .kh{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:750;font-size:15px}
+  .kit .kh span{font-size:12px;font-weight:700;color:#8a6410;background:#fdeec4;border-radius:999px;padding:3px 9px;white-space:nowrap}
+  .kit ul{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .kit li{font-size:14.5px;display:flex;align-items:center;gap:7px}
+  .kit li i{font-style:normal;font-size:18px;width:22px;text-align:center}
+  .kitmini{font-size:13.5px;color:#8a6410;margin-top:4px}
+  .stock ul{list-style:none;margin:10px 0 0;padding:0}
+  .stock li{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:15px}
+  .stock li:last-child{border:0}
+  .stock li b{font-variant-numeric:tabular-nums}
   .skel{height:120px;border-radius:18px;background:linear-gradient(90deg,#fff 0,#f3efe8 50%,#fff 100%);background-size:200% 100%;animation:sk 1.2s infinite}
   @keyframes sk{to{background-position:-200% 0}}
 </style>
@@ -209,6 +220,7 @@ function showModal() {
   h += nouv.map(s => `<div class="nr"><div class="lab">${s.arrivee <= today ? "Séjour en cours" : "Nouvelle réservation"}</div>
     <div class="dates">${fmt(s.arrivee, { weekday: "short", day: "numeric", month: "short" })} → ${fmt(s.depart, { weekday: "short", day: "numeric", month: "short" })}</div>
     <div class="info">${plural(s.nuits, "nuit")} · ${s.arrivee > today ? `studio prêt le <b>${longDate(s.arrivee)}</b> à ${CHECKIN}<br>` : ""}ménage le <b>${longDate(s.depart)}</b></div>
+    ${s.arrivee > today ? kitBlock(s, "Panier d’accueil") : ""}
     <button class="add" data-cal="${keyOf(s)}">📅 Ajouter à mon agenda</button></div>`).join("");
   h += annul.map(s => `<div class="nr cx"><div class="lab">Annulée ou modifiée</div>
     <div class="dates">${fmt(s.arrivee, { weekday: "short", day: "numeric", month: "short" })} → ${fmt(s.depart, { weekday: "short", day: "numeric", month: "short" })}</div>
@@ -245,7 +257,7 @@ function icsFor(s) {
   const e = t => t.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\;").replace(/\n/g, "\\n");
   const next = STAYS.find(n => n.arrivee >= s.depart && n !== s), same = next && next.arrivee === s.depart;
   const desc = `Départ des voyageurs après ${plural(s.nuits, "nuit")}.\n` +
-    (next ? (same ? `Nouveaux voyageurs le jour même : studio prêt pour ${CHECKIN}.` : `Prochaine arrivée : ${longDate(next.arrivee)} à ${CHECKIN}.`) : "Aucune arrivée prévue après pour l'instant.") + "\nPlanning : " + SITE;
+    (next ? (same ? `Nouveaux voyageurs le jour même : studio prêt pour ${CHECKIN}.` : `Prochaine arrivée : ${longDate(next.arrivee)} à ${CHECKIN}.`) + `\nPanier d’accueil (${plural(next.nuits, "nuit")}) : ${kitText(next.nuits)}.` : "Aucune arrivée prévue après pour l'instant.") + "\nPlanning : " + SITE;
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
   return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//menage-grande-motte//FR", "METHOD:PUBLISH", "BEGIN:VEVENT",
     `UID:menage-${day(s.arrivee)}-${day(s.depart)}@menage-grande-motte`, `DTSTAMP:${stamp}`,
@@ -277,6 +289,39 @@ function agendaBlock() {
     </div></section>`;
 }
 
+// ── Panier d'accueil selon la durée du séjour ──
+const KIT_ITEMS = [
+  { id: "cafe", e: "☕", n: "capsules de café" },
+  { id: "mad", e: "🧁", n: "madeleines" },
+  { id: "comp", e: "🍎", n: "compotes" },
+  { id: "jus", e: "🧃", n: "briques de jus (orange + pomme)" },
+  { id: "coca", e: "🥤", n: "Coca petit format" },
+  { id: "chips", e: "🍟", n: "paquet de chips" },
+];
+function kitFor(nuits) {
+  const k = { cafe: 2, mad: 2 };
+  if (nuits >= 3) k.comp = 2;
+  if (nuits >= 5) k.jus = 2;
+  if (nuits >= 7) { k.coca = 2; k.chips = 1; }
+  return k;
+}
+const kitTier = n => n <= 2 ? "1 à 2 nuits" : n <= 4 ? "3 à 4 nuits" : n <= 6 ? "5 à 6 nuits" : "7 nuits et +";
+const kitText = n => KIT_ITEMS.filter(i => kitFor(n)[i.id]).map(i => `${kitFor(n)[i.id]} ${i.n}`).join(", ");
+function kitBlock(stay, title) {
+  const k = kitFor(stay.nuits);
+  return `<div class="kit"><div class="kh">🎁 ${title}<span>${kitTier(stay.nuits)}</span></div><ul>` +
+    KIT_ITEMS.filter(i => k[i.id]).map(i => `<li><i>${i.e}</i><b>${k[i.id]}</b>&nbsp;${i.n}</li>`).join("") + `</ul></div>`;
+}
+function stockBlock(stays, today) {
+  const hour = +new Date().toLocaleString("fr-FR", { timeZone: TZ, hour: "2-digit", hour12: false });
+  const next = stays.filter(s => s.arrivee > today || (s.arrivee === today && hour < 16));
+  if (!next.length) return "";
+  const tot = {}; next.forEach(s => { const k = kitFor(s.nuits); for (const id in k) tot[id] = (tot[id] || 0) + k[id]; });
+  return `<h2>Paniers à préparer</h2><section class="card stock">
+    <div class="t2" style="color:var(--muted);font-size:14px">Total pour les ${plural(next.length, "arrivée")} à venir</div><ul>` +
+    KIT_ITEMS.filter(i => tot[i.id]).map(i => `<li><span>${i.e}&nbsp; ${i.n.replace(/^paquet de /, "paquets de ")}</span><b>${tot[i.id]}</b></li>`).join("") + `</ul></section>`;
+}
+
 function render(data) {
   const today = todayIso(), stays = (data.sejours || []).slice().sort((a, b) => a.arrivee.localeCompare(b.arrivee));
   STAYS = stays;
@@ -294,6 +339,7 @@ function render(data) {
       <div>Départ des voyageurs après ${plural(c.stay.nuits, "nuit")}${current && current === c.stay ? " · <b>séjour en cours</b>" : ""}</div>
       ${gapPill(c)}
       <div class="next">${c.next ? `Arrivée suivante : <b>${longDate(c.next.arrivee)}</b> à partir de ${CHECKIN} · ${plural(c.next.nuits, "nuit")}` : "Le studio reste libre après ce ménage."}</div>
+      ${c.next ? kitBlock(c.next, "Panier d’accueil à préparer") : ""}
     </section>`;
   }
 
@@ -304,7 +350,7 @@ function render(data) {
       <div class="row ${c.gap === 0 ? "rush" : ""}">
         <div class="day"><div class="dw">${fmt(c.date, { weekday: "short" }).replace(".", "")}</div><div class="dn">${fmt(c.date, { day: "numeric" })}</div><div class="dm">${fmt(c.date, { month: "short" }).replace(".", "")}</div></div>
         <div class="txt"><div class="t1">Ménage · ${rel(c.date, today).toLowerCase()}</div>
-          <div class="t2">${c.next ? (c.gap === 0 ? `Nouveaux voyageurs le jour même à ${CHECKIN}` : `Prochaine arrivée ${fmt(c.next.arrivee, { weekday: "long", day: "numeric", month: "long" })}`) : "Pas d’arrivée prévue après"}</div></div>
+          <div class="t2">${c.next ? (c.gap === 0 ? `Nouveaux voyageurs le jour même à ${CHECKIN}` : `Prochaine arrivée ${fmt(c.next.arrivee, { weekday: "long", day: "numeric", month: "long" })}`) : "Pas d’arrivée prévue après"}</div>${c.next ? `<div class="kitmini">🎁 Panier ${kitTier(c.next.nuits)} : ${kitText(c.next.nuits)}</div>` : ""}</div>
         ${gapTag(c)}
       </div>`).join("") + `</div>`;
   }
@@ -316,13 +362,14 @@ function render(data) {
       return `<div class="row">
         <div class="day"><div class="dw">${fmt(s.arrivee, { weekday: "short" }).replace(".", "")}</div><div class="dn">${fmt(s.arrivee, { day: "numeric" })}</div><div class="dm">${fmt(s.arrivee, { month: "short" }).replace(".", "")}</div></div>
         <div class="txt"><div class="t1">${fmt(s.arrivee, { day: "numeric", month: "short" })} → ${fmt(s.depart, { day: "numeric", month: "short" })}</div>
-          <div class="t2">${plural(s.nuits, "nuit")} · arrivée ${CHECKIN}</div></div>
+          <div class="t2">${plural(s.nuits, "nuit")} · arrivée ${CHECKIN}</div><div class="kitmini">🎁 ${kitText(s.nuits)}</div></div>
         ${now ? `<span class="tag now">En cours</span>` : ""}
         <button class="cal-add" data-cal="${keyOf(s)}" aria-label="Ajouter ce ménage à mon agenda" title="Ajouter à mon agenda">📅</button>
       </div>`;
     }).join("") + `</div>`;
   }
 
+  html += stockBlock(stays, today);
   html += `<h2>Calendrier</h2>` + calendar(stays, cl, today, 0) + calendar(stays, cl, today, 1) +
     `<div class="legend"><span><i style="background:#d7ebef"></i>Occupé</span><span><i style="background:var(--coral)"></i>Ménage, arrivée le jour même</span><span><i style="background:var(--ok)"></i>Ménage, sans arrivée le jour même</span></div>`;
   app.innerHTML = html;

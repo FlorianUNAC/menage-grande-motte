@@ -40,12 +40,14 @@ const frDate = iso => new Date(iso + "T12:00:00Z").toLocaleDateString("fr-FR", {
 const icsDay = iso => iso.replace(/-/g, "");
 const nextDay = iso => new Date(Date.parse(iso + "T12:00:00Z") + 864e5).toISOString().slice(0, 10);
 const esc = t => t.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\;").replace(/\n/g, "\\n");
+const kitText = n => [["capsules de café", 2], ["madeleines", 2], ...(n >= 3 ? [["compotes", 2]] : []), ...(n >= 5 ? [["briques de jus (orange + pomme)", 2]] : []),
+  ...(n >= 7 ? [["Coca petit format", 2], ["paquet de chips", 1]] : [])].map(([x, q]) => `${q} ${x}`).join(", ");
 export function menageEvent(s, stays, stamp, alarm) {
   const next = stays.find(n => n.arrivee >= s.depart && n !== s);
   const same = next && next.arrivee === s.depart;
   const summary = same ? "🧹 Ménage studio LGM · arrivée 16h le jour même" : "🧹 Ménage studio La Grande Motte";
   const desc = `Départ des voyageurs après ${s.nuits} nuit${s.nuits > 1 ? "s" : ""}.\n` +
-    (next ? (same ? "Nouveaux voyageurs le jour même : studio prêt pour 16h." : `Prochaine arrivée : ${frDate(next.arrivee)} à 16h.`) : "Aucune arrivée prévue après pour l'instant.") +
+    (next ? (same ? "Nouveaux voyageurs le jour même : studio prêt pour 16h." : `Prochaine arrivée : ${frDate(next.arrivee)} à 16h.`) + `\nPanier d'accueil (${next.nuits} nuit${next.nuits > 1 ? "s" : ""}) : ${kitText(next.nuits)}.` : "Aucune arrivée prévue après pour l'instant.") +
     "\nPlanning : https://florianunac.github.io/menage-grande-motte/";
   return ["BEGIN:VEVENT", `UID:menage-${icsDay(s.arrivee)}-${icsDay(s.depart)}@menage-grande-motte`, `DTSTAMP:${stamp}`,
     `DTSTART;VALUE=DATE:${icsDay(s.depart)}`, `DTEND;VALUE=DATE:${icsDay(nextDay(s.depart))}`,
