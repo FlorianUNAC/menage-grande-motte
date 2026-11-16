@@ -111,7 +111,7 @@
   .stock li:last-child{border:0}
   .stock li b{font-variant-numeric:tabular-nums}
   .tabs{position:sticky;top:0;z-index:20;display:flex;gap:6px;max-width:560px;margin:-44px auto 0;padding:8px 16px;}
-  .tabs button{flex:1;border:0;border-radius:12px;padding:12px 8px;font:700 15px/1 inherit;background:rgba(255,255,255,.75);color:var(--sea);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer}
+  .tabs button{flex:1;border:0;border-radius:12px;padding:12px 4px;font:700 14.5px/1 inherit;white-space:nowrap;background:rgba(255,255,255,.75);color:var(--sea);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer}
   .tabs button.on{background:var(--sea);color:#fff}
   .tabs .badge{display:inline-block;min-width:18px;padding:2px 5px;border-radius:999px;background:var(--coral);color:#fff;font-size:11px;margin-left:6px;vertical-align:1px}
   main.tabbed{margin-top:8px}
@@ -157,9 +157,11 @@
 <nav class="tabs" role="tablist">
   <button id="tPlan" class="on" role="tab" onclick="showTab('plan')">📅 Planning</button>
   <button id="tStock" role="tab" onclick="showTab('stock')">📦 Stock<span class="badge hidden" id="stockBadge"></span></button>
+  <button id="tLinge" role="tab" onclick="showTab('linge')">🛏️ Linge<span class="badge hidden" id="lingeBadge"></span></button>
 </nav>
 <main id="app" class="tabbed"><div class="skel"></div></main>
 <main id="stock" class="tabbed hidden"></main>
+<main id="linge" class="tabbed hidden"></main>
 <footer id="foot"></footer>
 <div class="toast" id="toast"></div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()" role="dialog" aria-modal="true" aria-labelledby="mTitle"><div class="sheet" id="sheet"></div></div>
@@ -364,6 +366,15 @@ const PROD = [
   { id: "coca", e: "🥤", n: "Coca petit format", n1: "Coca petit format" }, { id: "chips", e: "🍟", n: "Chips", n1: "chips" },
 ];
 const SKEY = "menage-lgm-stock";
+const LINGE = [
+  { id: "couette", e: "🛏️", n: "Housses de couette", par: 1 },
+  { id: "housse", e: "🛏️", n: "Draps housses", par: 1 },
+  { id: "taie", e: "💤", n: "Taies d’oreiller", par: 2 },
+  { id: "grande", e: "🛁", n: "Grandes serviettes", par: 2 },
+  { id: "petite", e: "🧼", n: "Petites serviettes", par: 2 },
+  { id: "tapis", e: "🟫", n: "Tapis de bain", par: 1 },
+  { id: "torchon", e: "🍽️", n: "Torchons", par: 2 },
+];
 const zero = () => Object.fromEntries(PROD.map(p => [p.id, 0]));
 const euro = v => v.toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
 let stMem = null;
@@ -376,19 +387,22 @@ function loadSt() {
   st.faits = st.faits || {};          // ménages validés : clé = séjour qui part
   st.hist = st.hist || [];
   st.restant = st.restant || null;    // saisie en cours
+  const L = st.linge || {}, z = () => Object.fromEntries(LINGE.map(x => [x.id, 0]));
+  st.linge = { par: { ...Object.fromEntries(LINGE.map(x => [x.id, x.par])), ...(L.par || {}) },
+    propre: { ...z(), ...(L.propre || {}) }, place: { ...Object.fromEntries(LINGE.map(x => [x.id, x.par])), ...(L.place || {}) },
+    lavage: { ...z(), ...(L.lavage || {}) } };
   return st;
 }
 function saveSt(st) { stMem = st; try { localStorage.setItem(SKEY, JSON.stringify(st)); } catch {} }
 let ST = loadSt(), PLAN = { stays: [], today: todayIso() };
 
 function showTab(t) {
-  document.getElementById("app").classList.toggle("hidden", t !== "plan");
+  const T = { plan: ["app", "tPlan"], stock: ["stock", "tStock"], linge: ["linge", "tLinge"] };
+  for (const k in T) { document.getElementById(T[k][0]).classList.toggle("hidden", k !== t); document.getElementById(T[k][1]).classList.toggle("on", k === t); }
   document.getElementById("foot").classList.toggle("hidden", t !== "plan");
-  document.getElementById("stock").classList.toggle("hidden", t !== "stock");
-  document.getElementById("tPlan").classList.toggle("on", t === "plan");
-  document.getElementById("tStock").classList.toggle("on", t === "stock");
-  try { history.replaceState(null, "", t === "stock" ? "#stock" : location.pathname + location.search); } catch {}
+  try { history.replaceState(null, "", t === "plan" ? location.pathname + location.search : "#" + t); } catch {}
   if (t === "stock") renderStock();
+  if (t === "linge") renderLinge();
   scrollTo(0, 0);
 }
 function nextMenage() {
@@ -412,6 +426,7 @@ function ctr(group, id, val, extraCls = "") {
 }
 function stepSt(group, id, d) {
   if (group === "restant") { ST.restant = ST.restant || { ...ST.epicerie }; ST.restant[id] = Math.max(0, ST.restant[id] + d); }
+  else if (group.startsWith("linge.")) { const g = group.slice(6); ST.linge[g][id] = Math.max(0, ST.linge[g][id] + d); saveSt(ST); renderLinge(); renderStock(); return; }
   else ST[group][id] = Math.max(0, ST[group][id] + d);
   saveSt(ST); renderStock();
 }
@@ -442,7 +457,8 @@ function renderStock() {
         : `<div class="note">Rien à sortir.</div>`) +
       (m.next ? `<div class="note">🎁 Panier pour l’arrivée du ${fmt(m.next.arrivee, { weekday: "long", day: "numeric", month: "long" })} (${plural(m.next.nuits, "nuit")}).</div>` : `<div class="note">Pas d’arrivée prévue après : pas de panier.</div>`) +
       (manque.length ? `<div class="note" style="color:#b4432c">⚠ Réserve insuffisante : ${manque.map(p => p.n.toLowerCase()).join(", ")}.</div>` : "") +
-      `<button class="ack" onclick="validerMenage()">✓ Ménage terminé, stock mis à jour</button></section>`;
+      `<div class="sec">3 · Linge</div><div class="note" style="margin-top:0">Changement du jeu complet pour 2 personnes : il passe automatiquement au lavage et un jeu propre est mis en place${lingeJeux() < 1 ? ` · <b style="color:#b4432c">⚠ pas de jeu propre complet</b>` : ""}.</div>` +
+      `<button class="ack" onclick="validerMenage()">✓ Ménage terminé, stock et linge mis à jour</button></section>`;
   }
 
   // 2. Liste de courses
@@ -486,9 +502,12 @@ function validerMenage() {
     ST.reserve[p.id] = Math.max(0, ST.reserve[p.id] - reas - (pan[p.id] || 0));
     ST.epicerie[p.id] = rest[p.id] + reas;
   });
+  let lingeManque = [];
+  LINGE.forEach(x => { const Lg = ST.linge; Lg.lavage[x.id] += Lg.place[x.id]; const take = Math.min(Lg.par[x.id], Lg.propre[x.id]);
+    Lg.propre[x.id] -= take; Lg.place[x.id] = take; if (take < Lg.par[x.id]) lingeManque.push(x.n.toLowerCase()); });
   ST.faits[keyOf(m.stay)] = { date: m.date, panierPour: m.next ? keyOf(m.next) : null };
-  ST.hist.push({ date: m.date, recette, vend, sortie, panier: m.next ? m.next.nuits : 0 });
-  ST.restant = null; saveSt(ST); renderStock(); scrollTo(0, 0);
+  ST.hist.push({ date: m.date, recette, vend, sortie, panier: m.next ? m.next.nuits : 0, lingeManque });
+  ST.restant = null; saveSt(ST); renderStock(); renderLinge(); scrollTo(0, 0);
   envoiPopup(true);
 }
 function coursesFaites() {
@@ -525,6 +544,8 @@ function pointTexte() {
   L.push(`Recette épicerie totale : ${euro(tot)}`, "", "Réserve :", ...PROD.map(p => `- ${p.n} : ${ST.reserve[p.id]}`), "");
   const a = PROD.filter(p => ach[p.id]);
   L.push(a.length ? "À acheter :" : "Rien à acheter pour les 30 prochains jours.", ...a.map(p => `- ${p.n} : ${ach[p.id]}`));
+  L.push("", `Linge : ${plural(lingeJeux(), "jeu")} propre${lingeJeux() > 1 ? "s" : ""} d'avance, ${lingeLavage()} pièce${lingeLavage() > 1 ? "s" : ""} au lavage`);
+  if (last && last.lingeManque && last.lingeManque.length) L.push(`⚠ Linge manquant au dernier ménage : ${last.lingeManque.join(", ")}`);
   L.push("", "— Jérôme");
   return L.join("\n");
 }
@@ -544,6 +565,45 @@ function envoiPopup(apresMenage) {
     </div>`;
   document.getElementById("modal").classList.add("open");
   document.body.style.overflow = "hidden";
+}
+
+// ══ Onglet Linge ══
+const lingeJeux = () => Math.min(...LINGE.map(x => ST.linge.par[x.id] ? Math.floor(ST.linge.propre[x.id] / ST.linge.par[x.id]) : 99));
+const lingeLavage = () => LINGE.reduce((a, x) => a + ST.linge.lavage[x.id], 0);
+function renderLinge() {
+  const el = document.getElementById("linge"); if (!el) return;
+  const Lg = ST.linge, jeux = lingeJeux(), lav = lingeLavage(), { today, stays } = PLAN;
+  const lim7 = new Date(Date.parse(today) + 7 * 864e5).toISOString().slice(0, 10);
+  const prochains = cleanings(stays, today).filter(c => c.date <= lim7 && !ST.faits[keyOf(c.stay)]);
+  const besoin = Math.max(1, prochains.length);
+  const badge = document.getElementById("lingeBadge");
+  badge.textContent = "!"; badge.classList.toggle("hidden", jeux >= besoin);
+  const col = jeux >= besoin + 1 ? "var(--ok)" : jeux >= besoin ? "#c08a12" : "#b4432c";
+  const vide = LINGE.every(x => !Lg.propre[x.id] && !Lg.lavage[x.id]);
+  let h = `<section class="card">
+    <div style="font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--sea-2)">Linge propre d’avance</div>
+    <div style="display:flex;align-items:baseline;gap:10px;margin:6px 0 2px"><span style="font-size:40px;font-weight:800;color:${col};line-height:1">${jeux >= 99 ? "–" : jeux}</span><span style="font-size:17px;color:var(--muted)">jeu${jeux > 1 ? "x" : ""} complet${jeux > 1 ? "s" : ""} pour 2 personnes</span></div>
+    <div class="note">${prochains.length ? `${plural(prochains.length, "ménage")} dans les 7 prochains jours : ${prochains.map(c => fmt(c.date, { weekday: "short", day: "numeric" }).replace(".", "")).join(", ")}.` : "Aucun ménage dans les 7 prochains jours."}
+      ${jeux < besoin ? `<br><b style="color:#b4432c">⚠ Pas assez de linge propre : récupérez ou lavez ${lav ? `les ${lav} pièces au lavage` : "du linge"} avant le prochain ménage.</b>` : ""}</div>
+    ${lav ? `<button class="ack" onclick="retourLaverie()">🧺 Lavage terminé : ${lav} pièce${lav > 1 ? "s" : ""} propre${lav > 1 ? "s" : ""}</button>` : ""}
+  </section>`;
+  if (vide) h += `<section class="card" style="margin-top:10px;background:#fff8e8;border:1.5px solid #f6e3b4"><b>Premier inventaire</b><div class="note">Comptez le linge propre que vous avez en réserve et saisissez-le ci-dessous. Le jeu actuellement dans l’appartement est déjà compté.</div></section>`;
+  h += `<h2>Linge propre en réserve</h2><section class="card">` + LINGE.map(x => {
+    const low = Lg.propre[x.id] < Lg.par[x.id] * besoin;
+    return `<div class="stp"><div class="lb"><i>${x.e}</i><div>${x.n}<small>${Lg.par[x.id]} par séjour · ${Lg.place[x.id]} en place${Lg.lavage[x.id] ? ` · ${Lg.lavage[x.id]} au lavage` : ""}</small></div></div>${ctr("linge.propre", x.id, Lg.propre[x.id], low ? "low" : "")}</div>`; }).join("") +
+    `<div class="note">À chaque ménage validé, le jeu en place passe au lavage et un jeu propre le remplace. Retirez ici une pièce abîmée, ajoutez-en une neuve.</div></section>`;
+  h += `<h2>Au lavage</h2><section class="card">` + LINGE.map(x => `<div class="stp"><div class="lb"><i>${x.e}</i>${x.n}</div>${ctr("linge.lavage", x.id, Lg.lavage[x.id])}</div>`).join("") +
+    `<div class="note">Si une partie seulement est revenue propre, baissez ici et augmentez la réserve propre.</div></section>`;
+  h += `<h2>Réglages linge</h2><section class="card"><details class="cfg"><summary>Quantité par séjour (2 personnes)</summary>` +
+    LINGE.map(x => `<div class="stp"><div class="lb"><i>${x.e}</i>${x.n}</div>${ctr("linge.par", x.id, Lg.par[x.id])}</div>`).join("") +
+    `</details><details class="cfg" style="margin-top:8px"><summary>Linge actuellement en place dans le studio</summary>` +
+    LINGE.map(x => `<div class="stp"><div class="lb"><i>${x.e}</i>${x.n}</div>${ctr("linge.place", x.id, Lg.place[x.id])}</div>`).join("") +
+    `</details><div class="btns" style="display:flex;gap:8px;margin-top:12px"><button class="btn" onclick="envoiPopup(false)">↗ Envoyer le point à Florian</button></div></section>`;
+  el.innerHTML = h;
+}
+function retourLaverie() {
+  LINGE.forEach(x => { ST.linge.propre[x.id] += ST.linge.lavage[x.id]; ST.linge.lavage[x.id] = 0; });
+  saveSt(ST); renderLinge(); renderStock(); toast("Linge rangé dans la réserve propre");
 }
 
 function render(data) {
@@ -598,7 +658,7 @@ function render(data) {
     `<div class="legend"><span><i style="background:#d7ebef"></i>Occupé</span><span><i style="background:var(--coral)"></i>Ménage, arrivée le jour même</span><span><i style="background:var(--ok)"></i>Ménage, sans arrivée le jour même</span></div>`;
   app.innerHTML = html;
   PLAN = { stays, today };
-  renderStock();
+  renderStock(); renderLinge();
   checkNew(stays, today);
 
   const ago = Date.now() - Date.parse(data.verifie), stale = ago > 8 * 3600e3;
@@ -618,6 +678,7 @@ async function load() {
   }
 }
 if (location.hash === "#stock") showTab("stock");
+if (location.hash === "#linge") showTab("linge");
 load();
 setInterval(load, 10 * 60e3);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
