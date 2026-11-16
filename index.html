@@ -110,6 +110,35 @@
   .stock li{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:15px}
   .stock li:last-child{border:0}
   .stock li b{font-variant-numeric:tabular-nums}
+  .tabs{position:sticky;top:0;z-index:20;display:flex;gap:6px;max-width:560px;margin:-44px auto 0;padding:8px 16px;}
+  .tabs button{flex:1;border:0;border-radius:12px;padding:12px 8px;font:700 15px/1 inherit;background:rgba(255,255,255,.75);color:var(--sea);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer}
+  .tabs button.on{background:var(--sea);color:#fff}
+  .tabs .badge{display:inline-block;min-width:18px;padding:2px 5px;border-radius:999px;background:var(--coral);color:#fff;font-size:11px;margin-left:6px;vertical-align:1px}
+  main.tabbed{margin-top:8px}
+  .hidden{display:none!important}
+  .stp{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .stp:last-child{border:0}
+  .stp .lb{display:flex;align-items:center;gap:8px;font-size:15px;min-width:0}
+  .stp .lb i{font-style:normal;font-size:20px;width:24px;text-align:center}
+  .stp .lb small{display:block;color:var(--muted);font-size:12.5px}
+  .ctr{display:flex;align-items:center;gap:4px;flex:none}
+  .ctr button{width:36px;height:36px;border-radius:10px;border:1.5px solid var(--line);background:#fff;font:700 19px/1 inherit;color:var(--sea);cursor:pointer}
+  .ctr button:active{background:var(--sand)}
+  .ctr output{min-width:34px;text-align:center;font-weight:800;font-size:17px;font-variant-numeric:tabular-nums}
+  .low output{color:#b4432c}
+  .shop li{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}
+  .shop li:last-child{border:0}
+  .shop ul{list-style:none;margin:6px 0 0;padding:0}
+  .qty{font-weight:800;background:#fde8e3;color:#b4432c;border-radius:999px;padding:3px 10px;font-variant-numeric:tabular-nums}
+  .okmsg{color:var(--ok);font-weight:650;padding:8px 0}
+  .note{font-size:13.5px;color:var(--muted);margin-top:6px}
+  .sumline{display:flex;justify-content:space-between;font-size:15px;padding:6px 0}
+  .sumline b{font-variant-numeric:tabular-nums}
+  .big{font-size:22px;font-weight:800;color:var(--ok)}
+  .sec{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--sea-2);margin:16px 0 4px}
+  .hist li{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:14.5px}
+  .hist ul{list-style:none;margin:0;padding:0}
+  details.cfg summary{cursor:pointer;font-weight:700;color:var(--sea);padding:4px 0}
   .skel{height:120px;border-radius:18px;background:linear-gradient(90deg,#fff 0,#f3efe8 50%,#fff 100%);background-size:200% 100%;animation:sk 1.2s infinite}
   @keyframes sk{to{background-position:-200% 0}}
 </style>
@@ -125,7 +154,12 @@
   </div>
 </header>
 
-<main id="app"><div class="skel"></div></main>
+<nav class="tabs" role="tablist">
+  <button id="tPlan" class="on" role="tab" onclick="showTab('plan')">📅 Planning</button>
+  <button id="tStock" role="tab" onclick="showTab('stock')">📦 Stock<span class="badge hidden" id="stockBadge"></span></button>
+</nav>
+<main id="app" class="tabbed"><div class="skel"></div></main>
+<main id="stock" class="tabbed hidden"></main>
 <footer id="foot"></footer>
 <div class="toast" id="toast"></div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()" role="dialog" aria-modal="true" aria-labelledby="mTitle"><div class="sheet" id="sheet"></div></div>
@@ -322,6 +356,158 @@ function stockBlock(stays, today) {
     KIT_ITEMS.filter(i => tot[i.id]).map(i => `<li><span>${i.e}&nbsp; ${i.n.replace(/^paquet de /, "paquets de ")}</span><b>${tot[i.id]}</b></li>`).join("") + `</ul></section>`;
 }
 
+// ══ Onglet Stock (enregistré sur le téléphone de l'agent) ══
+const PRIX = { cafe: .5, mad: .5, comp: .5, jus: 1, coca: 1, chips: 1 };
+const PROD = [
+  { id: "cafe", e: "☕", n: "Capsules de café" }, { id: "mad", e: "🧁", n: "Madeleines" },
+  { id: "comp", e: "🍎", n: "Compotes" }, { id: "jus", e: "🧃", n: "Jus de fruits" },
+  { id: "coca", e: "🥤", n: "Coca petit format" }, { id: "chips", e: "🍟", n: "Chips" },
+];
+const SKEY = "menage-lgm-stock";
+const zero = () => Object.fromEntries(PROD.map(p => [p.id, 0]));
+const euro = v => v.toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
+let stMem = null;
+function loadSt() {
+  let st = null; try { st = JSON.parse(localStorage.getItem(SKEY)); } catch { st = stMem; }
+  st = st || {};
+  st.reserve = { ...zero(), ...(st.reserve || {}) };
+  st.cible = { ...Object.fromEntries(PROD.map(p => [p.id, 3])), ...(st.cible || {}) };
+  st.epicerie = { ...st.cible, ...(st.epicerie || {}) };
+  st.faits = st.faits || {};          // ménages validés : clé = séjour qui part
+  st.hist = st.hist || [];
+  st.restant = st.restant || null;    // saisie en cours
+  return st;
+}
+function saveSt(st) { stMem = st; try { localStorage.setItem(SKEY, JSON.stringify(st)); } catch {} }
+let ST = loadSt(), PLAN = { stays: [], today: todayIso() };
+
+function showTab(t) {
+  document.getElementById("app").classList.toggle("hidden", t !== "plan");
+  document.getElementById("foot").classList.toggle("hidden", t !== "plan");
+  document.getElementById("stock").classList.toggle("hidden", t !== "stock");
+  document.getElementById("tPlan").classList.toggle("on", t === "plan");
+  document.getElementById("tStock").classList.toggle("on", t === "stock");
+  try { history.replaceState(null, "", t === "stock" ? "#stock" : location.pathname + location.search); } catch {}
+  if (t === "stock") renderStock();
+  scrollTo(0, 0);
+}
+function nextMenage() {
+  const { stays, today } = PLAN;
+  const lim = new Date(Date.parse(today) - 10 * 864e5).toISOString().slice(0, 10);
+  const c = cleanings(stays, lim).filter(c => !ST.faits[keyOf(c.stay)]);
+  return c[0] || null;
+}
+function besoins() {
+  const { stays, today } = PLAN;
+  const lim30 = new Date(Date.parse(today) + 30 * 864e5).toISOString().slice(0, 10);
+  const paniersFaits = new Set(Object.values(ST.faits).map(f => f.panierPour).filter(Boolean));
+  const arr = stays.filter(s => s.arrivee >= today && s.arrivee <= lim30 && !paniersFaits.has(keyOf(s)));
+  const b = zero(); arr.forEach(s => { const k = kitFor(s.nuits); for (const id in k) b[id] += k[id]; });
+  PROD.forEach(p => b[p.id] += ST.cible[p.id]); // une recharge complète de l'épicerie en marge
+  const ach = zero(); PROD.forEach(p => ach[p.id] = Math.max(0, b[p.id] - ST.reserve[p.id]));
+  return { arr, b, ach };
+}
+function ctr(group, id, val, extraCls = "") {
+  return `<div class="ctr ${extraCls}"><button aria-label="moins" onclick="stepSt('${group}','${id}',-1)">−</button><output>${val}</output><button aria-label="plus" onclick="stepSt('${group}','${id}',1)">+</button></div>`;
+}
+function stepSt(group, id, d) {
+  if (group === "restant") { ST.restant = ST.restant || { ...ST.epicerie }; ST.restant[id] = Math.max(0, ST.restant[id] + d); }
+  else ST[group][id] = Math.max(0, ST[group][id] + d);
+  saveSt(ST); renderStock();
+}
+function renderStock() {
+  const el = document.getElementById("stock"); if (!el) return;
+  const { today } = PLAN, m = nextMenage(), { arr, ach } = besoins();
+  const nAch = PROD.filter(p => ach[p.id] > 0).length;
+  const badge = document.getElementById("stockBadge");
+  badge.textContent = nAch; badge.classList.toggle("hidden", !nAch);
+  let h = "";
+
+  // 1. Passage ménage : épicerie + panier
+  if (m) {
+    const rest = ST.restant || { ...ST.epicerie };
+    const vend = zero(), reas = zero(), pan = m.next ? kitFor(m.next.nuits) : {}, sortie = zero();
+    let recette = 0;
+    PROD.forEach(p => { vend[p.id] = Math.max(0, ST.epicerie[p.id] - rest[p.id]); recette += vend[p.id] * PRIX[p.id];
+      reas[p.id] = Math.max(0, ST.cible[p.id] - rest[p.id]); sortie[p.id] = reas[p.id] + (pan[p.id] || 0); });
+    const manque = PROD.filter(p => sortie[p.id] > ST.reserve[p.id]);
+    h += `<section class="card"><div class="kicker" style="font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--sea-2)">Ménage ${m.date < today ? "à valider" : m.date === today ? "du jour" : "à venir"}</div>
+      <div style="font-size:21px;font-weight:800;margin:4px 0 2px;text-transform:capitalize">${longDate(m.date)}</div>
+      <div class="sec">1 · Épicerie : combien en reste-t-il ?</div>` +
+      PROD.map(p => `<div class="stp"><div class="lb"><i>${p.e}</i><div>${p.n}<small>${vend[p.id] ? `${vend[p.id]} vendu${vend[p.id] > 1 ? "s" : ""} · ${euro(vend[p.id] * PRIX[p.id])}` : `${euro(PRIX[p.id])} pièce`}</small></div></div>${ctr("restant", p.id, rest[p.id])}</div>`).join("") +
+      `<div class="sumline" style="margin-top:6px"><span>Recette épicerie de ce séjour</span><b class="big">${euro(recette)}</b></div>
+      <div class="sec">2 · À sortir de la réserve</div>` +
+      (PROD.some(p => sortie[p.id]) ? `<ul style="list-style:none;margin:0;padding:0">` + PROD.filter(p => sortie[p.id]).map(p =>
+        `<li class="sumline"><span>${p.e} ${p.n}</span><span>${reas[p.id] ? `${reas[p.id]} épicerie` : ""}${reas[p.id] && pan[p.id] ? " + " : ""}${pan[p.id] ? `${pan[p.id]} panier d’accueil` : ""} = <b>${sortie[p.id]}</b></span></li>`).join("") + `</ul>`
+        : `<div class="note">Rien à sortir.</div>`) +
+      (m.next ? `<div class="note">🎁 Panier pour l’arrivée du ${fmt(m.next.arrivee, { weekday: "long", day: "numeric", month: "long" })} (${plural(m.next.nuits, "nuit")}).</div>` : `<div class="note">Pas d’arrivée prévue après : pas de panier.</div>`) +
+      (manque.length ? `<div class="note" style="color:#b4432c">⚠ Réserve insuffisante : ${manque.map(p => p.n.toLowerCase()).join(", ")}.</div>` : "") +
+      `<button class="ack" onclick="validerMenage()">✓ Ménage terminé, stock mis à jour</button></section>`;
+  }
+
+  // 2. Liste de courses
+  h += `<h2>Liste de courses</h2><section class="card shop">` + (nAch
+    ? `<ul>` + PROD.filter(p => ach[p.id]).map(p => `<li><span>${p.e}&nbsp; ${p.n}</span><span class="qty">${ach[p.id]}</span></li>`).join("") + `</ul>
+       <div class="note">Pour les ${plural(arr.length, "panier")} des 30 prochains jours et une recharge complète de l’épicerie, moins la réserve.</div>
+       <div class="btns" style="display:flex;gap:8px;margin-top:12px"><button class="btn fill" onclick="coursesFaites()">🛒 Courses faites</button><button class="btn" onclick="partager('courses')">↗ Envoyer</button></div>`
+    : `<div class="okmsg">✓ La réserve couvre les 30 prochains jours.</div>`) + `</section>`;
+
+  // 3. Réserve
+  h += `<h2>Ma réserve</h2><section class="card">` + PROD.map(p => {
+    const low = ST.reserve[p.id] < ST.cible[p.id];
+    return `<div class="stp"><div class="lb"><i>${p.e}</i>${p.n}</div>${ctr("reserve", p.id, ST.reserve[p.id], low ? "low" : "")}</div>`; }).join("") +
+    `<div class="note">Ajustez si vous comptez une différence.</div></section>`;
+
+  // 4. Recettes
+  const tot = ST.hist.reduce((a, x) => a + x.recette, 0);
+  h += `<h2>Recettes épicerie</h2><section class="card hist">` + (ST.hist.length
+    ? `<div class="sumline"><span>Total depuis le début</span><b class="big">${euro(tot)}</b></div><ul>` +
+      ST.hist.slice(-8).reverse().map(x => `<li><span>Séjour parti le ${fmt(x.date, { day: "numeric", month: "short" })}</span><b>${euro(x.recette)}</b></li>`).join("") + `</ul>`
+    : `<div class="note">Les ventes apparaîtront ici après le premier ménage validé.</div>`) +
+    `<div class="btns" style="display:flex;gap:8px;margin-top:12px"><button class="btn" onclick="partager('point')">↗ Envoyer le point à Florian</button></div></section>`;
+
+  // 5. Réglages
+  h += `<h2>Réglages</h2><section class="card"><details class="cfg"><summary>Quantité à laisser dans l’épicerie</summary>` +
+    PROD.map(p => `<div class="stp"><div class="lb"><i>${p.e}</i>${p.n}</div>${ctr("cible", p.id, ST.cible[p.id])}</div>`).join("") +
+    `</details><details class="cfg" style="margin-top:8px"><summary>Contenu actuel de l’épicerie</summary>` +
+    PROD.map(p => `<div class="stp"><div class="lb"><i>${p.e}</i>${p.n}</div>${ctr("epicerie", p.id, ST.epicerie[p.id])}</div>`).join("") +
+    `<div class="note">Sert de point de départ pour calculer les ventes au prochain ménage.</div></details>
+    <div class="note" style="margin-top:12px">Le stock est enregistré sur ce téléphone.</div></section>`;
+  el.innerHTML = h;
+}
+function validerMenage() {
+  const m = nextMenage(); if (!m) return;
+  const rest = ST.restant || { ...ST.epicerie }, pan = m.next ? kitFor(m.next.nuits) : {};
+  let recette = 0; const vend = zero();
+  PROD.forEach(p => {
+    vend[p.id] = Math.max(0, ST.epicerie[p.id] - rest[p.id]); recette += vend[p.id] * PRIX[p.id];
+    const reas = Math.max(0, ST.cible[p.id] - rest[p.id]);
+    ST.reserve[p.id] = Math.max(0, ST.reserve[p.id] - reas - (pan[p.id] || 0));
+    ST.epicerie[p.id] = rest[p.id] + reas;
+  });
+  ST.faits[keyOf(m.stay)] = { date: m.date, panierPour: m.next ? keyOf(m.next) : null };
+  ST.hist.push({ date: m.date, recette, vend });
+  ST.restant = null; saveSt(ST); renderStock(); scrollTo(0, 0);
+  toast(`Ménage validé · recette ${euro(recette)}`);
+}
+function coursesFaites() {
+  const { ach } = besoins(); PROD.forEach(p => ST.reserve[p.id] += ach[p.id]);
+  saveSt(ST); renderStock(); toast("Réserve mise à jour");
+}
+async function partager(kind) {
+  const { ach } = besoins(); let t;
+  if (kind === "courses") t = "Courses studio La Grande Motte :\n" + PROD.filter(p => ach[p.id]).map(p => `- ${p.n} : ${ach[p.id]}`).join("\n");
+  else {
+    const tot = ST.hist.reduce((a, x) => a + x.recette, 0), last = ST.hist[ST.hist.length - 1];
+    t = `Point stock studio La Grande Motte (${fmt(PLAN.today, { day: "numeric", month: "long" })})\n` +
+      (last ? `Dernier ménage (${fmt(last.date, { day: "numeric", month: "long" })}) : recette épicerie ${euro(last.recette)}\n` : "") +
+      `Recette épicerie totale : ${euro(tot)}\n\nRéserve :\n` + PROD.map(p => `- ${p.n} : ${ST.reserve[p.id]}`).join("\n") +
+      (PROD.some(p => ach[p.id]) ? "\n\nÀ acheter :\n" + PROD.filter(p => ach[p.id]).map(p => `- ${p.n} : ${ach[p.id]}`).join("\n") : "\n\nRien à acheter.");
+  }
+  try { if (navigator.share) { await navigator.share({ text: t }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(t); toast("Texte copié, collez-le dans un message"); } catch { prompt("Copiez ce texte :", t); }
+}
+
 function render(data) {
   const today = todayIso(), stays = (data.sejours || []).slice().sort((a, b) => a.arrivee.localeCompare(b.arrivee));
   STAYS = stays;
@@ -373,6 +559,8 @@ function render(data) {
   html += `<h2>Calendrier</h2>` + calendar(stays, cl, today, 0) + calendar(stays, cl, today, 1) +
     `<div class="legend"><span><i style="background:#d7ebef"></i>Occupé</span><span><i style="background:var(--coral)"></i>Ménage, arrivée le jour même</span><span><i style="background:var(--ok)"></i>Ménage, sans arrivée le jour même</span></div>`;
   app.innerHTML = html;
+  PLAN = { stays, today };
+  renderStock();
   checkNew(stays, today);
 
   const ago = Date.now() - Date.parse(data.verifie), stale = ago > 8 * 3600e3;
@@ -391,6 +579,7 @@ async function load() {
       document.getElementById("app").innerHTML = `<section class="card"><div class="empty">Planning en cours de préparation.<br>Réessayez dans quelques minutes.</div></section>`;
   }
 }
+if (location.hash === "#stock") showTab("stock");
 load();
 setInterval(load, 10 * 60e3);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
